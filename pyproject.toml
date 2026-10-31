@@ -1,0 +1,27 @@
+[project]
+name = "auto-factory"
+version = "0.1.0"
+description = "A small computer-use harness for playing Factorio with a vision model"
+readme = "README.md"
+authors = [
+    { name = "Julie Dujardin", email = "julie@dujardin.pw" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "factorio-rcon-py>=2.0.1",
+    "mss>=10.1.0",
+    "openai>=3.42.0",
+    "pynput>=1.8.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+]
+
+[project.scripts]
+auto-factory = "auto_factory:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
