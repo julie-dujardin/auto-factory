@@ -5,7 +5,6 @@ from typing import Any, Literal
 from ..control.computer import FACTORIO_KEYS, Computer
 from ..control.factorio import FactorioAPI
 
-
 ControlMode = Literal["computer", "api", "mixed"]
 
 

@@ -90,7 +90,7 @@ def main() -> None:
 
     client = OpenAI()
     agent = FactorioAgent(
-        completions=client.chat.completions,
+        create_completion=client.chat.completions.create,
         computer=computer,
         model=model,
         factorio=factorio,

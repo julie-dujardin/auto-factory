@@ -16,12 +16,22 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.7.0",
+    "pre-commit-hooks>=6.0.0",
     "pytest>=9.0.0",
+    "ruff>=0.17.3",
+    "ty>=0.0.95",
 ]
 
 [project.scripts]
 auto-factory = "auto_factory.harness.cli:main"
 auto-factory-game = "auto_factory.control.display:main"
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "E4", "E7", "E9", "F", "I", "RUF", "SIM", "UP"]
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]

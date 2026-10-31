@@ -1,0 +1,66 @@
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: local
+    hooks:
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        entry: uv run --frozen trailing-whitespace-fixer
+        language: system
+        types: [text]
+      - id: end-of-file-fixer
+        name: fix end of files
+        entry: uv run --frozen end-of-file-fixer
+        language: system
+        types: [text]
+      - id: check-yaml
+        name: check YAML
+        entry: uv run --frozen check-yaml
+        language: system
+        types: [yaml]
+      - id: check-toml
+        name: check TOML
+        entry: uv run --frozen check-toml
+        language: system
+        types: [toml]
+      - id: check-merge-conflict
+        name: check merge conflicts
+        entry: uv run --frozen check-merge-conflict
+        language: system
+        types: [text]
+      - id: check-case-conflict
+        name: check case conflicts
+        entry: uv run --frozen check-case-conflict
+        language: system
+      - id: check-added-large-files
+        name: check added large files
+        entry: uv run --frozen check-added-large-files
+        language: system
+        args: [--enforce-all]
+      - id: debug-statements
+        name: check debug statements
+        entry: uv run --frozen debug-statement-hook
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: Ruff check
+        entry: uv run --frozen ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run --frozen ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: ty
+        name: ty
+        entry: uv run --frozen ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: pytest
+        entry: uv run --frozen pytest
+        language: system
+        pass_filenames: false
+        always_run: true

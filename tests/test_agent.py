@@ -1,5 +1,7 @@
 from types import SimpleNamespace
+from typing import Any
 
+from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
     FactorioAgent,
     game_state_observation,
@@ -7,7 +9,6 @@ from auto_factory.harness.agent import (
     trim_game_states,
     trim_images,
 )
-from auto_factory.control.computer import Screenshot
 
 
 class FakeCall:
@@ -29,7 +30,7 @@ class FakeCall:
 class FakeCompletions:
     def __init__(self, calls: list[FakeCall]) -> None:
         self.calls = calls
-        self.requests: list[dict[str, object]] = []
+        self.requests: list[dict[str, Any]] = []
 
     def create(self, **kwargs: object) -> SimpleNamespace:
         self.requests.append(kwargs)
@@ -54,7 +55,9 @@ class FakeComputer:
     def move_cursor(self, x: int, y: int, duration: float) -> None:
         self.actions.append(("move_cursor", (x, y, duration)))
 
-    def click(self, x: int, y: int, button: str, clicks: int, hold_seconds: float) -> None:
+    def click(
+        self, x: int, y: int, button: str, clicks: int, hold_seconds: float
+    ) -> None:
         self.actions.append(("click", (x, y, button, clicks, hold_seconds)))
 
     def drag(
@@ -97,7 +100,12 @@ def test_agent_executes_action_then_answer() -> None:
         ]
     )
     computer = FakeComputer()
-    agent = FactorioAgent(completions, computer, "test-model", report=lambda _: None)
+    agent = FactorioAgent(
+        completions.create,
+        computer,
+        "test-model",
+        report=lambda _: None,
+    )
 
     assert agent.run("move") == "done"
     assert computer.actions == [("game_action", ("move_up", 0.5))]
@@ -119,7 +127,7 @@ def test_api_agent_uses_state_without_screenshot() -> None:
     )
     factorio = FakeFactorio()
     agent = FactorioAgent(
-        completions,
+        completions.create,
         None,
         "test-model",
         factorio=factorio,
@@ -157,7 +165,9 @@ def test_trim_game_states_keeps_latest_three() -> None:
 
 
 def test_trim_images_keeps_latest_three() -> None:
-    messages = [observation(Screenshot(str(index).encode(), 1, 1)) for index in range(5)]
+    messages = [
+        observation(Screenshot(str(index).encode(), 1, 1)) for index in range(5)
+    ]
 
     trim_images(messages)
 

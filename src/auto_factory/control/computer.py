@@ -5,7 +5,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-
 NORMALIZED_SCREEN_SIZE = 1000
 
 
@@ -131,8 +130,11 @@ class DesktopComputer:
         from mss.tools import to_png
 
         shot = self._mss.grab(self._monitor)
+        png = to_png(shot.rgb, shot.size)
+        if png is None:
+            raise RuntimeError("Desktop capture did not produce an image.")
         screenshot = Screenshot(
-            png=to_png(shot.rgb, shot.size),
+            png=png,
             width=shot.width,
             height=shot.height,
         )

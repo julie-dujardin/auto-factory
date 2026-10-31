@@ -4,7 +4,6 @@ import json
 import time
 from typing import Any, Protocol
 
-
 RESPONSE_PREFIX = "__AUTO_FACTORY__"
 
 

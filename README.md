@@ -124,5 +124,20 @@ Press `Ctrl-C` to stop the agent.
 ## Tests
 
 ```shell
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check
 uv run pytest
+```
+
+Install the uv-managed pre-commit hooks in each clone:
+
+```shell
+uv run pre-commit install
+```
+
+Run every hook manually with:
+
+```shell
+uv run pre-commit run --all-files
 ```

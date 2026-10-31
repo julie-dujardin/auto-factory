@@ -10,17 +10,14 @@ import tempfile
 import time
 from pathlib import Path
 
-
 FLATPAK_ROOT = Path.home() / ".var/app/com.valvesoftware.Steam"
 
 
 def find_factorio() -> Path:
     candidates = [
         Path(os.environ["FACTORIO_BIN"]) if "FACTORIO_BIN" in os.environ else None,
-        FLATPAK_ROOT
-        / ".local/share/Steam/steamapps/common/Factorio/bin/x64/factorio",
-        Path.home()
-        / ".steam/steam/steamapps/common/Factorio/bin/x64/factorio",
+        FLATPAK_ROOT / ".local/share/Steam/steamapps/common/Factorio/bin/x64/factorio",
+        Path.home() / ".steam/steam/steamapps/common/Factorio/bin/x64/factorio",
     ]
     for candidate in candidates:
         if candidate is not None and candidate.is_file():

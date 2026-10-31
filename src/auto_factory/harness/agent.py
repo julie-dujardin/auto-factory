@@ -3,12 +3,11 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 
 from ..control.computer import Computer, Screenshot
 from ..control.factorio import FactorioAPI
 from .tools import ControlMode, execute_tool, tools_for_mode
-
 
 SYSTEM_PROMPT = """You are controlling Factorio through observations and tools.
 Work toward the user's goal in small, deliberate steps. Inspect the newest observations
@@ -27,10 +26,6 @@ MODE_PROMPTS: dict[ControlMode, str] = {
     "api": "Use structured game state and API tools; no screenshot is available.",
     "mixed": "Use either desktop or API tools, choosing the most reliable option per step.",
 }
-
-
-class ChatCompletions(Protocol):
-    def create(self, **kwargs: Any) -> Any: ...
 
 
 def observation(screenshot: Screenshot) -> dict[str, Any]:
@@ -90,7 +85,7 @@ def trim_game_states(messages: list[dict[str, Any]], keep: int = 3) -> None:
 class FactorioAgent:
     def __init__(
         self,
-        completions: ChatCompletions,
+        create_completion: Callable[..., Any],
         computer: Computer | None,
         model: str,
         factorio: FactorioAPI | None = None,
@@ -103,7 +98,7 @@ class FactorioAgent:
             raise ValueError(f"{control} mode requires computer control")
         if control in {"api", "mixed"} and factorio is None:
             raise ValueError(f"{control} mode requires Factorio API control")
-        self._completions = completions
+        self._create_completion = create_completion
         self._computer = computer
         self._factorio = factorio
         self._model = model
@@ -130,7 +125,7 @@ class FactorioAgent:
                 messages.append(game_state_observation(state))
             trim_images(messages)
             trim_game_states(messages)
-            response = self._completions.create(
+            response = self._create_completion(
                 model=self._model,
                 messages=messages,
                 tools=self._tools,
@@ -143,7 +138,9 @@ class FactorioAgent:
                 {
                     "role": "assistant",
                     "content": message.content,
-                    "tool_calls": [call.model_dump(exclude_none=True) for call in tool_calls],
+                    "tool_calls": [
+                        call.model_dump(exclude_none=True) for call in tool_calls
+                    ],
                 }
             )
             if not tool_calls:
