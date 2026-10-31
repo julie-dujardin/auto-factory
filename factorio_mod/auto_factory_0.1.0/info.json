@@ -1,0 +1,10 @@
+{
+  "name": "auto_factory",
+  "version": "0.1.0",
+  "title": "Auto Factory Agent API",
+  "author": "Julie Dujardin",
+  "factorio_version": "2.1",
+  "dependencies": ["base >= 2.1.0"],
+  "description": "A small, rule-respecting RCON API for external Factorio agents.",
+  "homepage": "https://github.com/julie-dujardin/auto-factory"
+}
