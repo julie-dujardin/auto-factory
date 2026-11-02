@@ -213,6 +213,25 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_recipe",
+        "Look up how an item or fluid is made: every recipe and mineable resource "
+        "producing it, with ingredients and products per craft, base crafting time, "
+        "whether the recipe is unlocked (else which technology unlocks it), and for "
+        "each machine that can run it (hand, furnaces, assemblers, drills) its "
+        "seconds per craft, output per minute, power source, and whether you can "
+        "already craft that machine. Rates ignore modules, beacons, and research "
+        "bonuses.",
+        _object_schema(
+            {
+                "item": {
+                    "type": "string",
+                    "description": "Exact item or fluid name, e.g. iron-gear-wheel.",
+                }
+            },
+            ["item"],
+        ),
+    ),
+    _tool(
         "api_craft",
         "Queue a hand-crafting recipe, consuming ingredients and taking normal crafting time.",
         _object_schema(

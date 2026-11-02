@@ -188,3 +188,12 @@ def test_float_noise_is_rounded_away() -> None:
     )
 
     assert payload["result"] == {"dx": -0.88}
+
+
+def test_recipe_forwards_item() -> None:
+    raw = FakeRcon({"item": "iron-plate", "recipes": {}, "mining": {}})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    api.execute("api_recipe", {"item": "iron-plate"})
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert request == {"id": 1, "method": "recipe", "params": {"item": "iron-plate"}}
