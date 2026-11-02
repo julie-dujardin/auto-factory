@@ -5,6 +5,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from langfuse import get_client
+
 from ..control.computer import Computer, Screenshot
 from ..control.factorio import FactorioAPI
 from .tools import ControlMode, execute_tool, tools_for_mode
@@ -82,6 +84,22 @@ def trim_game_states(messages: list[dict[str, Any]], keep: int = 3) -> None:
             )
 
 
+def thinking(message: Any) -> dict[str, Any]:
+    # Holo returns reasoning in a non-standard field; Langfuse only renders
+    # its ChatML `thinking` parts as formatted reasoning.
+    reasoning = getattr(message, "reasoning", None)
+    if not reasoning:
+        return {}
+    return {"thinking": [{"type": "thinking", "content": reasoning}]}
+
+
+def usage_details(response: Any) -> dict[str, int] | None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    return {"input": usage.prompt_tokens, "output": usage.completion_tokens}
+
+
 class FactorioAgent:
     def __init__(
         self,
@@ -125,24 +143,37 @@ class FactorioAgent:
                 messages.append(game_state_observation(state))
             trim_images(messages)
             trim_game_states(messages)
-            response = self._create_completion(
+            parameters: dict[str, str | float] = {
+                "tool_choice": "required",
+                "temperature": 0.8,
+            }
+            with get_client().start_as_current_observation(
+                as_type="generation",
+                name=f"step {step}",
                 model=self._model,
-                messages=messages,
-                tools=self._tools,
-                tool_choice="required",
-                temperature=0.8,
-            )
-            message = response.choices[0].message
-            tool_calls = message.tool_calls or []
-            messages.append(
-                {
+                input=messages,
+                model_parameters=dict(parameters),
+            ) as generation:
+                response = self._create_completion(
+                    model=self._model,
+                    messages=messages,
+                    tools=self._tools,
+                    **parameters,
+                )
+                message = response.choices[0].message
+                tool_calls = message.tool_calls or []
+                reply = {
                     "role": "assistant",
                     "content": message.content,
                     "tool_calls": [
                         call.model_dump(exclude_none=True) for call in tool_calls
                     ],
                 }
-            )
+                generation.update(
+                    output=reply | thinking(message),
+                    usage_details=usage_details(response),
+                )
+            messages.append(reply)
             if not tool_calls:
                 self._report(f"step {step}: model returned no tool call")
                 continue
@@ -157,15 +188,20 @@ class FactorioAgent:
                     self._report(f"step {step}: {name} {arguments}")
                     if name == "answer":
                         return str(arguments["content"])
-                    try:
-                        result = execute_tool(
-                            self._computer,
-                            self._factorio,
-                            name,
-                            arguments,
-                        )
-                    except (RuntimeError, TypeError, ValueError) as exc:
-                        result = f"error: {exc}"
+                    with get_client().start_as_current_observation(
+                        as_type="tool", name=name, input=arguments
+                    ) as span:
+                        try:
+                            result = execute_tool(
+                                self._computer,
+                                self._factorio,
+                                name,
+                                arguments,
+                            )
+                        except (RuntimeError, TypeError, ValueError) as exc:
+                            result = f"error: {exc}"
+                            span.update(level="ERROR", status_message=str(exc))
+                        span.update(output=result)
                 messages.append(
                     {
                         "role": "tool",

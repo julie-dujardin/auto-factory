@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "factorio-rcon-py>=2.0.1",
+    "langfuse>=5.1.0",
     "mss>=10.1.0",
     "openai>=3.42.0",
     "pynput>=1.8.1",

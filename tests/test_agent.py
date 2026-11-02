@@ -6,8 +6,10 @@ from auto_factory.harness.agent import (
     FactorioAgent,
     game_state_observation,
     observation,
+    thinking,
     trim_game_states,
     trim_images,
+    usage_details,
 )
 
 
@@ -142,6 +144,22 @@ def test_api_agent_uses_state_without_screenshot() -> None:
     tools = completions.requests[0]["tools"]
     assert {tool["function"]["name"] for tool in tools} >= {"api_craft", "answer"}
     assert "game_action" not in {tool["function"]["name"] for tool in tools}
+
+
+def test_thinking_uses_chatml_parts() -> None:
+    message = SimpleNamespace(reasoning="look first")
+
+    assert thinking(message) == {
+        "thinking": [{"type": "thinking", "content": "look first"}]
+    }
+    assert thinking(SimpleNamespace(content="ok")) == {}
+
+
+def test_usage_details_maps_token_counts() -> None:
+    usage = SimpleNamespace(prompt_tokens=10, completion_tokens=3)
+
+    assert usage_details(SimpleNamespace(usage=usage)) == {"input": 10, "output": 3}
+    assert usage_details(SimpleNamespace()) is None
 
 
 def test_game_state_observation_wraps_json() -> None:

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 
+from langfuse import get_client, propagate_attributes
 from openai import OpenAI
 
 from ..control.computer import Computer, DesktopComputer
@@ -100,8 +101,20 @@ def main() -> None:
     )
 
     print(f"Starting {control} control. Press Ctrl-C to stop.", flush=True)
-    try:
-        print(agent.run(args.task))
-    except KeyboardInterrupt:
-        print("\nStopped.", file=sys.stderr)
-        raise SystemExit(130) from None
+    langfuse = get_client()
+    with (
+        langfuse.start_as_current_observation(
+            as_type="agent", name="episode", input=args.task
+        ) as episode,
+        propagate_attributes(trace_name="episode", tags=[control, model]),
+    ):
+        if url := langfuse.get_trace_url():
+            print(f"Trace: {url}", flush=True)
+        try:
+            answer = agent.run(args.task)
+        except KeyboardInterrupt:
+            episode.update(level="WARNING", status_message="stopped by user")
+            print("\nStopped.", file=sys.stderr)
+            raise SystemExit(130) from None
+        episode.update(output=answer)
+        print(answer)

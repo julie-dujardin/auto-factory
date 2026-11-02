@@ -11,7 +11,7 @@ Install the project and configure H Company's Holo model:
 uv sync
 export OPENAI_API_KEY="..."
 export OPENAI_BASE_URL="https://api.hcompany.ai/v1/"
-export MODEL_NAME="holo3-1-35b-a3b"
+export MODEL_NAME="holo4-27b"
 ```
 
 The harness uses the standard OpenAI client environment variables, so another
@@ -22,6 +22,20 @@ export OPENAI_API_KEY="..."
 export OPENAI_BASE_URL="https://provider.example/v1"
 export MODEL_NAME="vision-model"
 ```
+
+## Tracing
+
+Episodes are traced to [Langfuse](https://langfuse.com) when its keys are set:
+
+```shell
+export LANGFUSE_PUBLIC_KEY="pk-lf-..."
+export LANGFUSE_SECRET_KEY="sk-lf-..."
+export LANGFUSE_BASE_URL="https://langfuse.example"
+```
+
+Each run is one `episode` trace containing a generation per step (with the
+model's reasoning and screenshots) and a span per tool call. The CLI prints the
+trace URL on start. Without the keys, the harness runs untraced.
 
 ## Computer control
 
