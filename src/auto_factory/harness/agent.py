@@ -27,6 +27,7 @@ within about 2.7 tiles of a resource tile to mine it; walk closer before acting.
 After an action, use the next observations to verify its effect.
 Research of type "trigger" completes automatically when the required action occurs
 (producing items, etc), without needing to be queued.
+Avoid minimal actions: prefer using machines rather than performing manual actions like mining.
 
 Plan with the task tools before acting. Split the goal into ordered tasks with
 add_tasks. For the current task, either split it further or, once it is concrete, call

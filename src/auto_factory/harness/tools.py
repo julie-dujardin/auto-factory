@@ -279,6 +279,35 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_wait",
+        "Let the game run until a condition holds or seconds of game time pass. "
+        "crafts: the entity finishes count more crafts. items: the entity holds at "
+        "least count of item, or the player inventory does when entity is empty. "
+        "handcraft: the hand-crafting queue is empty. Returns the progress reached "
+        "and the entity status, e.g. no_fuel when a machine stalls.",
+        _object_schema(
+            {
+                "condition": {
+                    "type": "string",
+                    "enum": ["crafts", "items", "handcraft"],
+                },
+                "entity": {
+                    "type": "string",
+                    "description": "Entity name at dx/dy, or empty for the player.",
+                },
+                "dx": OFFSET,
+                "dy": OFFSET,
+                "item": {
+                    "type": "string",
+                    "description": "Item for items; else empty.",
+                },
+                "count": {"type": "integer", "minimum": 0, "maximum": 10000},
+                "seconds": {"type": "number", "minimum": 1, "maximum": 60},
+            },
+            ["condition", "entity", "dx", "dy", "item", "count", "seconds"],
+        ),
+    ),
+    _tool(
         "api_research",
         "Queue a lab technology for research. The scan lists which are available.",
         _object_schema(

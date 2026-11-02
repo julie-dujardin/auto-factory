@@ -143,3 +143,48 @@ def test_find_forwards_filters() -> None:
     assert api.execute("api_find", arguments) == '{"matched":0,"entities":[]}'
     request = json.loads(raw.commands[0].removeprefix("/af "))
     assert request == {"id": 1, "method": "find", "params": arguments}
+
+
+def test_wait_polls_until_done_then_stops() -> None:
+    raw = FakeRcon({"done": True, "reason": "condition met"})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {
+        "condition": "crafts",
+        "entity": "stone-furnace",
+        "dx": 2,
+        "dy": 0,
+        "item": "",
+        "count": 5,
+        "seconds": 30,
+    }
+
+    api.execute("api_wait", arguments)
+    methods = [
+        json.loads(command.removeprefix("/af "))["method"] for command in raw.commands
+    ]
+    assert methods == ["wait", "status", "stop"]
+
+
+def test_empty_lua_arrays_become_lists() -> None:
+    raw = FakeRcon(
+        {
+            "entities": {},
+            "resources": {},
+            "research": {"queue": {}, "available": {}, "triggers": {}},
+        }
+    )
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    assert api.observe(8) == {
+        "entities": [],
+        "resources": {},
+        "research": {"queue": [], "available": [], "triggers": {}},
+    }
+
+
+def test_float_noise_is_rounded_away() -> None:
+    payload = RconFactorioAPI._extract_payload(
+        RESPONSE_PREFIX + '{"ok":true,"result":{"dx":-0.8800000000000000710542735760}}'
+    )
+
+    assert payload["result"] == {"dx": -0.88}

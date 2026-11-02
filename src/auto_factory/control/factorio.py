@@ -8,6 +8,26 @@ RESPONSE_PREFIX = "__AUTO_FACTORY__"
 # The mod caps actions at 60 game seconds; this covers slowed game speeds too.
 ACTION_TIMEOUT = 120.0
 POLL_INTERVAL = 0.1
+# Factorio encodes an empty Lua table as {}, so array fields need restoring by name.
+LIST_FIELDS: dict[str, list[tuple[str, ...]]] = {
+    "observe": [("entities",), ("research", "queue"), ("research", "available")],
+    "find": [("entities",)],
+    "research": [("queue",), ("available",)],
+}
+
+
+# Factorio prints floats as long, inexact decimals (0.21 can arrive as
+# 0.21000000000000002); the mod rounds to 0.01 anyway, so this only drops noise.
+def _parse_float(text: str) -> float:
+    return round(float(text), 2)
+
+
+def _restore_empty_list(result: Any, path: tuple[str, ...]) -> None:
+    parent = result
+    for key in path[:-1]:
+        parent = parent.get(key) if isinstance(parent, dict) else None
+    if isinstance(parent, dict) and parent.get(path[-1]) == {}:
+        parent[path[-1]] = []
 
 
 class RawRconClient(Protocol):
@@ -62,6 +82,7 @@ class RconFactorioAPI:
 
         methods = {
             "api_find": "find",
+            "api_wait": "wait",
             "api_walk_to": "walk_to",
             "api_mine": "mine",
             "api_craft": "craft",
@@ -77,7 +98,7 @@ class RconFactorioAPI:
             raise ValueError(f"unknown Factorio API tool: {name}") from exc
 
         result = self._call(method, arguments)
-        if name in {"api_walk_to", "api_mine"}:
+        if name in {"api_walk_to", "api_mine", "api_wait"}:
             try:
                 self._wait_for_action()
             finally:
@@ -110,7 +131,10 @@ class RconFactorioAPI:
             raise RuntimeError("Factorio returned a mismatched response")
         if not payload.get("ok"):
             raise ValueError(str(payload.get("error", "unknown Factorio API error")))
-        return payload.get("result")
+        result = payload.get("result")
+        for path in LIST_FIELDS.get(method, []):
+            _restore_empty_list(result, path)
+        return result
 
     @staticmethod
     def _extract_payload(response: str) -> dict[str, Any]:
@@ -120,7 +144,7 @@ class RconFactorioAPI:
                 continue
             raw = line[marker + len(RESPONSE_PREFIX) :]
             try:
-                payload = json.loads(raw)
+                payload = json.loads(raw, parse_float=_parse_float)
             except json.JSONDecodeError as exc:
                 raise RuntimeError("Factorio returned malformed JSON") from exc
             if not isinstance(payload, dict):

@@ -172,6 +172,14 @@ local function entity_contents(entity)
   return result
 end
 
+local function entity_status(entity)
+  local ok, status = pcall(function() return entity.status end)
+  if ok and status then
+    return STATUS_NAMES[status] or status
+  end
+  return nil
+end
+
 local function find_entity(player, name, position)
   local candidates = player.surface.find_entities_filtered {
     position = position,
@@ -224,6 +232,14 @@ local function action_summary(player, action)
     summary.target = action.target_name
     summary.requested = action.count
     summary.mined = action.mined
+  elseif action.kind == "wait" then
+    summary.condition = action.condition
+    summary.progress = action.progress
+    summary.goal = action.goal
+    if action.entity then
+      summary.entity = action.entity.valid and action.entity.name or "gone"
+      summary.status = action.entity.valid and entity_status(action.entity) or nil
+    end
   end
   return summary
 end
@@ -285,6 +301,41 @@ local function tick_mine(player, action)
   end
 end
 
+-- Returns the current value of a wait condition, or nil once its entity is gone.
+local function wait_progress(player, action)
+  local entity = action.entity
+  if entity and not entity.valid then
+    return nil
+  end
+  if action.condition == "crafts" then
+    return entity.products_finished - action.baseline
+  elseif action.condition == "items" then
+    local contents = entity and entity_contents(entity)
+      or inventory_contents(player.get_main_inventory())
+    return contents[action.item] or 0
+  else
+    return player.crafting_queue_size
+  end
+end
+
+local function tick_wait(player, action)
+  local progress = wait_progress(player, action)
+  if progress == nil then
+    finish(player, action, "entity gone")
+    return
+  end
+  action.progress = progress
+  local met
+  if action.condition == "handcraft" then
+    met = progress == 0
+  else
+    met = progress >= action.goal
+  end
+  if met then
+    finish(player, action, "condition met")
+  end
+end
+
 script.on_event(defines.events.on_tick, function(event)
   ensure_storage()
   for player_index, action in pairs(storage.actions) do
@@ -299,6 +350,8 @@ script.on_event(defines.events.on_tick, function(event)
       tick_walk_to(player, action)
     elseif action.kind == "mine" then
       tick_mine(player, action)
+    elseif action.kind == "wait" then
+      tick_wait(player, action)
     end
   end
 end)
@@ -358,14 +411,6 @@ local function research_state(force)
     available = available,
     triggers = triggers,
   }
-end
-
-local function entity_status(entity)
-  local ok, status = pcall(function() return entity.status end)
-  if ok and status then
-    return STATUS_NAMES[status] or status
-  end
-  return nil
 end
 
 local function entity_entry(entity, origin)
@@ -614,6 +659,46 @@ function handlers.mine(params)
     until_tick = game.tick + MAX_ACTION_TICKS,
   }
   return action_summary(player, storage.actions[player.index])
+end
+
+local WAIT_CONDITIONS = {crafts = true, items = true, handcraft = true}
+
+function handlers.wait(params)
+  local player = get_player(params)
+  local condition = required_string(params, "condition")
+  if not WAIT_CONDITIONS[condition] then
+    fail("condition must be crafts, items, or handcraft")
+  end
+  local seconds = math.max(1, math.min(60, required_number(params, "seconds")))
+  local action = {
+    kind = "wait",
+    condition = condition,
+    until_tick = game.tick + math.floor(seconds * 60),
+  }
+  local name = params.entity or ""
+  if condition == "crafts" or (condition == "items" and name ~= "") then
+    if name == "" then
+      fail("crafts needs an entity")
+    end
+    action.entity = find_entity(player, name, position_from(player, params))
+  end
+  if condition == "crafts" then
+    local ok, finished = pcall(function() return action.entity.products_finished end)
+    if not ok then
+      fail(name .. " does not count finished crafts; wait for items instead")
+    end
+    action.baseline = finished
+  end
+  if condition == "items" then
+    action.item = required_string(params, "item")
+  end
+  if condition ~= "handcraft" then
+    action.goal = math.max(1, math.floor(required_number(params, "count")))
+  end
+  stop_player(player)
+  storage.actions[player.index] = action
+  tick_wait(player, action)
+  return action_summary(player, action)
 end
 
 function handlers.status(params)
