@@ -32,6 +32,12 @@ def _tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, 
 
 
 COORDINATE = {"type": "number", "description": "Absolute Factorio world coordinate."}
+OFFSET = {
+    "type": "number",
+    "minimum": -100,
+    "maximum": 100,
+    "description": "Relative offset in tiles from the player position.",
+}
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
 
 
@@ -148,27 +154,29 @@ API_TOOLS = [
         ),
     ),
     _tool(
-        "api_walk",
-        "Walk using normal character movement and collision.",
+        "api_walk_to",
+        "Walk by a relative offset in tiles using normal character movement and "
+        "collision. Positive dx is east and positive dy is south. Returns whether the "
+        "player arrived or got blocked, and the final position.",
         _object_schema(
             {
-                "direction": DIRECTION,
-                "seconds": {"type": "number", "minimum": 0.1, "maximum": 10},
+                "dx": OFFSET,
+                "dy": OFFSET,
             },
-            ["direction", "seconds"],
+            ["dx", "dy"],
         ),
     ),
     _tool(
         "api_mine",
         "Mine the entity or resource at an absolute world position using normal reach "
-        "and mining speed.",
+        "and mining speed, until count items were gained or the target is gone.",
         _object_schema(
             {
                 "x": COORDINATE,
                 "y": COORDINATE,
-                "seconds": {"type": "number", "minimum": 0.1, "maximum": 10},
+                "count": {"type": "integer", "minimum": 1, "maximum": 500},
             },
-            ["x", "y", "seconds"],
+            ["x", "y", "count"],
         ),
     ),
     _tool(
@@ -223,7 +231,39 @@ API_TOOLS = [
             ["entity", "x", "y", "item", "count"],
         ),
     ),
+    _tool(
+        "api_rotate",
+        "Rotate a reachable placed entity clockwise, or counterclockwise when reverse.",
+        _object_schema(
+            {
+                "entity": {"type": "string"},
+                "x": COORDINATE,
+                "y": COORDINATE,
+                "reverse": {"type": "boolean"},
+            },
+            ["entity", "x", "y", "reverse"],
+        ),
+    ),
+    _tool(
+        "api_research",
+        "Queue a lab technology for research. The scan lists which are available.",
+        _object_schema(
+            {"technology": {"type": "string"}},
+            ["technology"],
+        ),
+    ),
 ]
+
+
+NOTE_TOOL = _tool(
+    "note",
+    "Save a note for later steps, such as a plan, a discovered location, or a lesson "
+    "from a failed action. All notes are shown after every observation.",
+    _object_schema(
+        {"content": {"type": "string", "maxLength": 1000}},
+        ["content"],
+    ),
+)
 
 
 ANSWER_TOOL = _tool(
@@ -242,7 +282,7 @@ def tools_for_mode(mode: ControlMode) -> list[dict[str, Any]]:
         selected.extend(DESKTOP_TOOLS)
     if mode in {"api", "mixed"}:
         selected.extend(API_TOOLS)
-    selected.append(ANSWER_TOOL)
+    selected.extend([NOTE_TOOL, ANSWER_TOOL])
     return selected
 
 
@@ -252,8 +292,8 @@ def execute_tool(
     name: str,
     arguments: dict[str, Any],
 ) -> str:
-    if name == "answer":
-        raise ValueError("answer is handled by the agent loop")
+    if name in {"answer", "note"}:
+        raise ValueError(f"{name} is handled by the agent loop")
     if name.startswith("api_"):
         if factorio is None:
             raise RuntimeError("Factorio API control is not configured")

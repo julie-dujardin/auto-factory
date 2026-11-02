@@ -84,3 +84,45 @@ def test_empty_rcon_response_is_clear() -> None:
 
     with pytest.raises(RuntimeError, match="no RCON response"):
         api.observe(12)
+
+
+class ScriptedRcon:
+    def __init__(self, results: dict[str, list[object]]) -> None:
+        self.results = results
+        self.methods: list[str] = []
+
+    def send_command(self, command: str) -> str:
+        request = json.loads(command.removeprefix("/af "))
+        self.methods.append(request["method"])
+        payload = {
+            "id": request["id"],
+            "ok": True,
+            "result": self.results[request["method"]].pop(0),
+        }
+        return RESPONSE_PREFIX + json.dumps(payload)
+
+
+def test_timed_action_polls_until_done_then_returns_stop_summary(monkeypatch) -> None:
+    monkeypatch.setattr("auto_factory.control.factorio.POLL_INTERVAL", 0)
+    raw = ScriptedRcon(
+        {
+            "walk_to": [{"done": False}],
+            "status": [{"done": False}, {"done": True}],
+            "stop": [{"done": True, "reason": "arrived"}],
+        }
+    )
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    result = api.execute("api_walk_to", {"dx": 3, "dy": -2})
+
+    assert json.loads(result) == {"done": True, "reason": "arrived"}
+    assert raw.methods == ["walk_to", "status", "status", "stop"]
+
+
+def test_timed_action_stops_when_polling_fails(monkeypatch) -> None:
+    raw = ScriptedRcon({"mine": [{}], "status": [], "stop": [{"done": True}]})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    with pytest.raises(RuntimeError, match="RCON request failed"):
+        api.execute("api_mine", {"x": 1, "y": 2, "count": 5})
+    assert raw.methods[-1] == "stop"

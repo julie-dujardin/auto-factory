@@ -5,6 +5,9 @@ import time
 from typing import Any, Protocol
 
 RESPONSE_PREFIX = "__AUTO_FACTORY__"
+# The mod caps actions at 60 game seconds; this covers slowed game speeds too.
+ACTION_TIMEOUT = 120.0
+POLL_INTERVAL = 0.1
 
 
 class RawRconClient(Protocol):
@@ -58,12 +61,14 @@ class RconFactorioAPI:
             )
 
         methods = {
-            "api_walk": "walk",
+            "api_walk_to": "walk_to",
             "api_mine": "mine",
             "api_craft": "craft",
             "api_place": "place",
             "api_insert": "insert",
             "api_take": "take",
+            "api_rotate": "rotate",
+            "api_research": "research",
         }
         try:
             method = methods[name]
@@ -71,13 +76,19 @@ class RconFactorioAPI:
             raise ValueError(f"unknown Factorio API tool: {name}") from exc
 
         result = self._call(method, arguments)
-        if name in {"api_walk", "api_mine"}:
-            duration = float(arguments["seconds"])
+        if name in {"api_walk_to", "api_mine"}:
             try:
-                time.sleep(duration)
+                self._wait_for_action()
             finally:
-                self._call("stop", {})
+                result = self._call("stop", {})
         return json.dumps(result, separators=(",", ":"))
+
+    def _wait_for_action(self) -> None:
+        deadline = time.monotonic() + ACTION_TIMEOUT
+        while time.monotonic() < deadline:
+            if self._call("status", {}).get("done"):
+                return
+            time.sleep(POLL_INTERVAL)
 
     def _call(self, method: str, params: dict[str, Any]) -> Any:
         self._request_id += 1

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
@@ -5,10 +6,12 @@ from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
     FactorioAgent,
     game_state_observation,
+    notes_observation,
     observation,
     thinking,
     trim_game_states,
     trim_images,
+    trim_notes,
     usage_details,
 )
 
@@ -35,7 +38,8 @@ class FakeCompletions:
         self.requests: list[dict[str, Any]] = []
 
     def create(self, **kwargs: object) -> SimpleNamespace:
-        self.requests.append(kwargs)
+        # The agent keeps mutating its message list after each request.
+        self.requests.append(deepcopy(kwargs))
         call = self.calls.pop(0)
         message = SimpleNamespace(content=None, tool_calls=[call])
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
@@ -112,6 +116,39 @@ def test_agent_executes_action_then_answer() -> None:
     assert agent.run("move") == "done"
     assert computer.actions == [("game_action", ("move_up", 0.5))]
     assert len(completions.requests) == 2
+
+
+def test_notes_are_shown_in_later_steps() -> None:
+    completions = FakeCompletions(
+        [
+            FakeCall("note", '{"content":"ore at 3,4"}'),
+            FakeCall("note", '{"content":"furnace needed"}'),
+            FakeCall("answer", '{"content":"done"}'),
+        ]
+    )
+    agent = FactorioAgent(
+        completions.create,
+        FakeComputer(),
+        "test-model",
+        report=lambda _: None,
+    )
+
+    assert agent.run("explore") == "done"
+    first, second, third = (request["messages"] for request in completions.requests)
+    assert not any(str(message["content"]).startswith("<notes>") for message in first)
+    assert second[-1]["content"] == "<notes>\n1. ore at 3,4\n</notes>"
+    assert third[-1]["content"] == (
+        "<notes>\n1. ore at 3,4\n2. furnace needed\n</notes>"
+    )
+
+
+def test_trim_notes_keeps_latest() -> None:
+    messages = [notes_observation(["a"]), notes_observation(["a", "b"])]
+
+    trim_notes(messages)
+
+    assert messages[0]["content"] == "<notes>\n[superseded by later notes]\n</notes>"
+    assert messages[1]["content"] == "<notes>\n1. a\n2. b\n</notes>"
 
 
 def test_observation_embeds_png() -> None:

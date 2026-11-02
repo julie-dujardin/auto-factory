@@ -18,8 +18,13 @@ top-left. Game-state coordinates are absolute Factorio world coordinates.
 Use game_action for known controls instead of reasoning about keyboard letters.
 Use click with the right button and a hold duration to mine resources or entities.
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
-After an action, use the next observations to verify its effect. Call answer only when
-the goal is complete or cannot be completed.
+The player can build and interact with entities up to 10 tiles away, but must be
+within about 2.7 tiles of a resource tile to mine it; walk closer before acting.
+After an action, use the next observations to verify its effect. Old observations are
+evicted, so use note to keep plans, locations, and lessons you will need later. Call
+answer only when the goal is complete or cannot be completed.
+research of type "trigger" complete automatically when the required action occurs
+(producing items, etc), without needing to be queued.
 """
 
 
@@ -69,19 +74,33 @@ def trim_images(messages: list[dict[str, Any]], keep: int = 3) -> None:
                 part.update({"type": "text", "text": "[screenshot evicted]"})
 
 
-def trim_game_states(messages: list[dict[str, Any]], keep: int = 3) -> None:
+def notes_observation(notes: list[str]) -> dict[str, str]:
+    lines = "\n".join(f"{index}. {note}" for index, note in enumerate(notes, 1))
+    return {"role": "user", "content": f"<notes>\n{lines}\n</notes>"}
+
+
+def _trim_tagged(
+    messages: list[dict[str, Any]], tag: str, placeholder: str, keep: int
+) -> None:
     seen = 0
     for message in reversed(messages):
         content = message.get("content")
         if message.get("role") != "user" or not isinstance(content, str):
             continue
-        if not content.startswith("<game_state>\n"):
+        if not content.startswith(f"<{tag}>\n"):
             continue
         seen += 1
         if seen > keep:
-            message["content"] = (
-                "<game_state>\n[structured observation evicted]\n</game_state>"
-            )
+            message["content"] = f"<{tag}>\n[{placeholder}]\n</{tag}>"
+
+
+def trim_game_states(messages: list[dict[str, Any]], keep: int = 3) -> None:
+    _trim_tagged(messages, "game_state", "structured observation evicted", keep)
+
+
+def trim_notes(messages: list[dict[str, Any]]) -> None:
+    # Every notes message is a superset of the earlier ones.
+    _trim_tagged(messages, "notes", "superseded by later notes", keep=1)
 
 
 def thinking(message: Any) -> dict[str, Any]:
@@ -134,6 +153,7 @@ class FactorioAgent:
             },
             {"role": "user", "content": task},
         ]
+        notes: list[str] = []
 
         for step in range(1, self._max_steps + 1):
             if self._computer is not None:
@@ -141,8 +161,11 @@ class FactorioAgent:
             if self._factorio is not None:
                 state = self._factorio.observe(self._observation_radius)
                 messages.append(game_state_observation(state))
+            if notes:
+                messages.append(notes_observation(notes))
             trim_images(messages)
             trim_game_states(messages)
+            trim_notes(messages)
             parameters: dict[str, str | float] = {
                 "tool_choice": "required",
                 "temperature": 0.8,
@@ -192,12 +215,16 @@ class FactorioAgent:
                         as_type="tool", name=name, input=arguments
                     ) as span:
                         try:
-                            result = execute_tool(
-                                self._computer,
-                                self._factorio,
-                                name,
-                                arguments,
-                            )
+                            if name == "note":
+                                notes.append(str(arguments["content"]))
+                                result = "ok"
+                            else:
+                                result = execute_tool(
+                                    self._computer,
+                                    self._factorio,
+                                    name,
+                                    arguments,
+                                )
                         except (RuntimeError, TypeError, ValueError) as exc:
                             result = f"error: {exc}"
                             span.update(level="ERROR", status_message=str(exc))

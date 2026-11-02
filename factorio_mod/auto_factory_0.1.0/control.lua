@@ -7,6 +7,19 @@ local DIRECTIONS = {
   west = defines.direction.west,
 }
 
+local DIRECTION_NAMES = {}
+for name, value in pairs(defines.direction) do
+  DIRECTION_NAMES[value] = name
+end
+
+local STATUS_NAMES = {}
+for name, value in pairs(defines.entity_status) do
+  STATUS_NAMES[value] = name
+end
+
+local MAX_ACTION_TICKS = 60 * 60
+local STUCK_TICKS = 30
+
 local OBSERVABLE_TYPES = {
   "accumulator",
   "ammo-turret",
@@ -168,10 +181,92 @@ local function find_entity(player, name, position)
   return closest
 end
 
-local function stop_player(player)
+local function halt(player)
   player.walking_state = {walking = false, direction = defines.direction.north}
   player.mining_state = {mining = false}
+end
+
+local function stop_player(player)
+  halt(player)
   storage.actions[player.index] = nil
+end
+
+-- Finished actions stay in storage so the caller can read why they ended.
+local function finish(player, action, reason)
+  halt(player)
+  action.done = true
+  action.reason = reason
+end
+
+local function action_summary(player, action)
+  local summary = {
+    kind = action.kind,
+    done = action.done == true,
+    reason = action.reason,
+    position = plain_position(player.position),
+  }
+  if action.kind == "walk_to" then
+    summary.target = plain_position(action.target)
+  elseif action.kind == "mine" then
+    summary.target = action.target_name
+    summary.requested = action.count
+    summary.mined = action.mined
+  end
+  return summary
+end
+
+local function walk_direction(dx, dy, tolerance)
+  local east = dx > tolerance
+  local west = dx < -tolerance
+  local south = dy > tolerance
+  local north = dy < -tolerance
+  if north and east then return defines.direction.northeast end
+  if north and west then return defines.direction.northwest end
+  if south and east then return defines.direction.southeast end
+  if south and west then return defines.direction.southwest end
+  if north then return defines.direction.north end
+  if south then return defines.direction.south end
+  if east then return defines.direction.east end
+  if west then return defines.direction.west end
+  return nil
+end
+
+local function tick_walk_to(player, action)
+  local position = player.position
+  -- One tick of movement must not jump across the arrival window.
+  local tolerance = math.max(0.3, player.character_running_speed)
+  local direction = walk_direction(
+    action.target.x - position.x,
+    action.target.y - position.y,
+    tolerance
+  )
+  if not direction then
+    finish(player, action, "arrived")
+    return
+  end
+  if action.last_position and distance_squared(position, action.last_position) < 1e-6 then
+    action.stuck_ticks = action.stuck_ticks + 1
+    if action.stuck_ticks >= STUCK_TICKS then
+      finish(player, action, "blocked")
+      return
+    end
+  else
+    action.stuck_ticks = 0
+  end
+  action.last_position = {x = position.x, y = position.y}
+  player.walking_state = {walking = true, direction = direction}
+end
+
+local function tick_mine(player, action)
+  player.update_selected_entity(action.position)
+  local target = player.selected
+  if not target or not target.valid or target.name ~= action.target_name then
+    finish(player, action, "target gone")
+  elseif not player.can_reach_entity(target) then
+    finish(player, action, "out of reach")
+  else
+    player.mining_state = {mining = true, position = action.position}
+  end
 end
 
 script.on_event(defines.events.on_tick, function(event)
@@ -180,21 +275,74 @@ script.on_event(defines.events.on_tick, function(event)
     local player = game.get_player(player_index)
     if not player or not player.valid or not player.character then
       storage.actions[player_index] = nil
+    elseif action.done then
+      -- Waiting for the caller to collect the result.
     elseif event.tick >= action.until_tick then
-      stop_player(player)
-    elseif action.kind == "walk" then
-      player.walking_state = {walking = true, direction = action.direction}
+      finish(player, action, "timeout")
+    elseif action.kind == "walk_to" then
+      tick_walk_to(player, action)
     elseif action.kind == "mine" then
-      player.update_selected_entity(action.position)
-      local target = player.selected
-      if target and target.valid and player.can_reach_entity(target) then
-        player.mining_state = {mining = true, position = action.position}
-      else
-        stop_player(player)
-      end
+      tick_mine(player, action)
     end
   end
 end)
+
+script.on_event(defines.events.on_player_mined_item, function(event)
+  ensure_storage()
+  local action = storage.actions[event.player_index]
+  if not action or action.kind ~= "mine" or action.done then
+    return
+  end
+  local stack = event.item_stack
+  action.mined[stack.name] = (action.mined[stack.name] or 0) + stack.count
+  action.mined_total = action.mined_total + stack.count
+  if action.mined_total >= action.count then
+    finish(game.get_player(event.player_index), action, "count reached")
+  end
+end)
+
+local function research_state(force)
+  local current = force.current_research
+  local queue = {}
+  for _, technology in pairs(force.research_queue or {}) do
+    table.insert(queue, technology.name)
+  end
+  local available = {}
+  local triggers = {}
+  for name, technology in pairs(force.technologies) do
+    if technology.enabled and not technology.researched then
+      local ready = true
+      for _, prerequisite in pairs(technology.prerequisites) do
+        if not prerequisite.researched then
+          ready = false
+          break
+        end
+      end
+      if ready then
+        local trigger = technology.prototype.research_trigger
+        if trigger then
+          triggers[name] = {
+            type = trigger.type,
+            item = trigger.item and trigger.item.name,
+            entity = trigger.entity and (trigger.entity.name or trigger.entity),
+            fluid = trigger.fluid,
+            count = trigger.count or trigger.amount,
+          }
+        else
+          table.insert(available, name)
+        end
+      end
+    end
+  end
+  table.sort(available)
+  return {
+    current = current and current.name,
+    progress = current and rounded(force.research_progress),
+    queue = queue,
+    available = available,
+    triggers = triggers,
+  }
+end
 
 local handlers = {}
 
@@ -238,7 +386,7 @@ function handlers.observe(params)
       name = entity.name,
       type = entity.type,
       position = plain_position(entity.position),
-      direction = entity.direction,
+      direction = DIRECTION_NAMES[entity.direction],
     }
     if entity.health then
       entry.health = rounded(entity.health)
@@ -253,19 +401,13 @@ function handlers.observe(params)
     end
     local status_ok, status = pcall(function() return entity.status end)
     if status_ok and status then
-      entry.status = status
+      entry.status = STATUS_NAMES[status] or status
     end
     table.insert(entities, entry)
   end
 
   local action = storage.actions[player.index]
-  local action_state = nil
-  if action then
-    action_state = {
-      kind = action.kind,
-      ticks_remaining = math.max(0, action.until_tick - game.tick),
-    }
-  end
+  local action_state = action and action_summary(player, action)
   return {
     tick = game.tick,
     speed = game.speed,
@@ -279,29 +421,32 @@ function handlers.observe(params)
       crafting_progress = rounded(player.crafting_queue_progress),
       action = action_state,
     },
+    research = research_state(player.force),
     radius = radius,
     resources = resources,
     entities = entities,
   }
 end
 
-function handlers.walk(params)
+function handlers.walk_to(params)
   local player = get_player(params)
-  local direction = direction_from(params)
-  local seconds = math.max(0.1, math.min(10, required_number(params, "seconds")))
+  local dx = math.max(-100, math.min(100, required_number(params, "dx")))
+  local dy = math.max(-100, math.min(100, required_number(params, "dy")))
+  local start = player.position
   stop_player(player)
   storage.actions[player.index] = {
-    kind = "walk",
-    direction = direction,
-    until_tick = game.tick + math.ceil(seconds * 60),
+    kind = "walk_to",
+    target = {x = start.x + dx, y = start.y + dy},
+    stuck_ticks = 0,
+    until_tick = game.tick + MAX_ACTION_TICKS,
   }
-  return {scheduled = "walk", seconds = seconds}
+  return action_summary(player, storage.actions[player.index])
 end
 
 function handlers.mine(params)
   local player = get_player(params)
   local position = position_from(params)
-  local seconds = math.max(0.1, math.min(10, required_number(params, "seconds")))
+  local count = math.max(1, math.min(500, math.floor(required_number(params, "count"))))
   player.update_selected_entity(position)
   local target = player.selected
   if not target or not target.valid then
@@ -314,15 +459,70 @@ function handlers.mine(params)
   storage.actions[player.index] = {
     kind = "mine",
     position = position,
-    until_tick = game.tick + math.ceil(seconds * 60),
+    target_name = target.name,
+    count = count,
+    mined = {},
+    mined_total = 0,
+    until_tick = game.tick + MAX_ACTION_TICKS,
   }
-  return {scheduled = "mine", target = target.name, seconds = seconds}
+  return action_summary(player, storage.actions[player.index])
+end
+
+function handlers.status(params)
+  local player = get_player(params)
+  local action = storage.actions[player.index]
+  return action and action_summary(player, action) or {done = true}
 end
 
 function handlers.stop(params)
   local player = get_player(params)
+  local action = storage.actions[player.index]
+  if not action then
+    return {done = true}
+  end
+  if not action.done then
+    finish(player, action, "stopped")
+  end
+  local summary = action_summary(player, action)
   stop_player(player)
-  return {stopped = true}
+  return summary
+end
+
+function handlers.rotate(params)
+  local player = get_player(params)
+  local name = required_string(params, "entity")
+  local entity = find_entity(player, name, position_from(params))
+  if not player.can_reach_entity(entity) then
+    fail("the entity is outside reach")
+  end
+  if not entity.rotate {reverse = params.reverse == true, by_player = player} then
+    fail("Factorio did not rotate the " .. name .. "; it may not be rotatable")
+  end
+  return {
+    entity = name,
+    position = plain_position(entity.position),
+    direction = DIRECTION_NAMES[entity.direction],
+  }
+end
+
+function handlers.research(params)
+  local player = get_player(params)
+  local name = required_string(params, "technology")
+  local force = player.force
+  local technology = force.technologies[name]
+  if not technology then
+    fail("unknown technology: " .. name)
+  end
+  if technology.researched then
+    fail(name .. " is already researched")
+  end
+  if technology.prototype.research_trigger then
+    fail(name .. " is unlocked by its trigger, not by labs")
+  end
+  if not force.add_research(technology) then
+    fail("could not queue " .. name .. "; check that its prerequisites are researched")
+  end
+  return research_state(force)
 end
 
 function handlers.craft(params)
