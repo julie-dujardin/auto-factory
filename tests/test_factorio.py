@@ -124,5 +124,22 @@ def test_timed_action_stops_when_polling_fails(monkeypatch) -> None:
     api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
 
     with pytest.raises(RuntimeError, match="RCON request failed"):
-        api.execute("api_mine", {"x": 1, "y": 2, "count": 5})
+        api.execute("api_mine", {"dx": 1, "dy": 2, "count": 5})
     assert raw.methods[-1] == "stop"
+
+
+def test_find_forwards_filters() -> None:
+    raw = FakeRcon({"matched": 0, "entities": []})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {
+        "name": "ore",
+        "type": "resource",
+        "status": "",
+        "radius": 200,
+        "sort": "distance",
+        "limit": 5,
+    }
+
+    assert api.execute("api_find", arguments) == '{"matched":0,"entities":[]}'
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert request == {"id": 1, "method": "find", "params": arguments}

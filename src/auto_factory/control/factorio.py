@@ -61,6 +61,7 @@ class RconFactorioAPI:
             )
 
         methods = {
+            "api_find": "find",
             "api_walk_to": "walk_to",
             "api_mine": "mine",
             "api_craft": "craft",

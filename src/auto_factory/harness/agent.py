@@ -9,22 +9,33 @@ from langfuse import get_client
 
 from ..control.computer import Computer, Screenshot
 from ..control.factorio import FactorioAPI
-from .tools import ControlMode, execute_tool, tools_for_mode
+from .tasks import Task, TaskTree
+from .tools import TASK_TOOL_NAMES, ControlMode, execute_tool, tools_for_mode
 
 SYSTEM_PROMPT = """You are controlling Factorio through observations and tools.
 Work toward the user's goal in small, deliberate steps. Inspect the newest observations
 before acting. Screenshot coordinates are normalized to [0, 1000] with the origin at
-top-left. Game-state coordinates are absolute Factorio world coordinates.
+top-left. Game positions in API arguments and results are dx/dy offsets in tiles from
+the player's current position (positive dx is east, positive dy is south), so they
+change whenever the player moves. Only player.world_position in api_scan is absolute;
+record locations in notes as world positions and subtract it to get offsets again.
 Use game_action for known controls instead of reasoning about keyboard letters.
 Use click with the right button and a hold duration to mine resources or entities.
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
 The player can build and interact with entities up to 10 tiles away, but must be
 within about 2.7 tiles of a resource tile to mine it; walk closer before acting.
-After an action, use the next observations to verify its effect. Old observations are
-evicted, so use note to keep plans, locations, and lessons you will need later. Call
-answer only when the goal is complete or cannot be completed.
-research of type "trigger" complete automatically when the required action occurs
+After an action, use the next observations to verify its effect.
+Research of type "trigger" completes automatically when the required action occurs
 (producing items, etc), without needing to be queued.
+
+Plan with the task tools before acting. Split the goal into ordered tasks with
+add_tasks. For the current task, either split it further or, once it is concrete, call
+propose_approaches with genuinely different ways to do it, ranked against the goal's
+constraints. Game tools only run while the current task has an approach. Call
+complete_task when its done_when holds, recording the locations and facts later tasks
+need: a closed task's steps are removed from your context. Call fail_task when an
+approach does not work, saying what you learned. Completing or failing the goal ends
+the run.
 """
 
 
@@ -74,9 +85,8 @@ def trim_images(messages: list[dict[str, Any]], keep: int = 3) -> None:
                 part.update({"type": "text", "text": "[screenshot evicted]"})
 
 
-def notes_observation(notes: list[str]) -> dict[str, str]:
-    lines = "\n".join(f"{index}. {note}" for index, note in enumerate(notes, 1))
-    return {"role": "user", "content": f"<notes>\n{lines}\n</notes>"}
+def tasks_observation(tasks: TaskTree) -> dict[str, str]:
+    return {"role": "user", "content": f"<tasks>\n{tasks.render()}\n</tasks>"}
 
 
 def _trim_tagged(
@@ -98,9 +108,8 @@ def trim_game_states(messages: list[dict[str, Any]], keep: int = 3) -> None:
     _trim_tagged(messages, "game_state", "structured observation evicted", keep)
 
 
-def trim_notes(messages: list[dict[str, Any]]) -> None:
-    # Every notes message is a superset of the earlier ones.
-    _trim_tagged(messages, "notes", "superseded by later notes", keep=1)
+def trim_tasks(messages: list[dict[str, Any]]) -> None:
+    _trim_tagged(messages, "tasks", "superseded by later tasks", keep=1)
 
 
 def thinking(message: Any) -> dict[str, Any]:
@@ -153,19 +162,21 @@ class FactorioAgent:
             },
             {"role": "user", "content": task},
         ]
-        notes: list[str] = []
+        tasks = TaskTree(task)
+        # Where each task's steps begin, so closing it can drop them.
+        starts: dict[Task, int] = {}
 
         for step in range(1, self._max_steps + 1):
+            starts.setdefault(tasks.current, len(messages))
             if self._computer is not None:
                 messages.append(observation(self._computer.screenshot()))
             if self._factorio is not None:
                 state = self._factorio.observe(self._observation_radius)
                 messages.append(game_state_observation(state))
-            if notes:
-                messages.append(notes_observation(notes))
+            messages.append(tasks_observation(tasks))
             trim_images(messages)
             trim_game_states(messages)
-            trim_notes(messages)
+            trim_tasks(messages)
             parameters: dict[str, str | float] = {
                 "tool_choice": "required",
                 "temperature": 0.8,
@@ -201,6 +212,7 @@ class FactorioAgent:
                 self._report(f"step {step}: model returned no tool call")
                 continue
 
+            cut: int | None = None
             for call in tool_calls:
                 name = call.function.name
                 try:
@@ -209,26 +221,23 @@ class FactorioAgent:
                     result = f"error: invalid JSON arguments: {exc}"
                 else:
                     self._report(f"step {step}: {name} {arguments}")
-                    if name == "answer":
-                        return str(arguments["content"])
                     with get_client().start_as_current_observation(
                         as_type="tool", name=name, input=arguments
                     ) as span:
+                        acted = tasks.current
                         try:
-                            if name == "note":
-                                notes.append(str(arguments["content"]))
-                                result = "ok"
-                            else:
-                                result = execute_tool(
-                                    self._computer,
-                                    self._factorio,
-                                    name,
-                                    arguments,
-                                )
-                        except (RuntimeError, TypeError, ValueError) as exc:
+                            result = self._execute(tasks, name, arguments)
+                        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                             result = f"error: {exc}"
                             span.update(level="ERROR", status_message=str(exc))
+                        else:
+                            if name in {"complete_task", "fail_task"}:
+                                start = starts.pop(acted, None)
+                                if start is not None:
+                                    cut = start if cut is None else min(cut, start)
                         span.update(output=result)
+                    if tasks.finished:
+                        return tasks.outcome
                 messages.append(
                     {
                         "role": "tool",
@@ -236,5 +245,17 @@ class FactorioAgent:
                         "content": result,
                     }
                 )
+            if cut is not None:
+                del messages[cut:]
 
         return f"Step budget exhausted after {self._max_steps} steps."
+
+    def _execute(self, tasks: TaskTree, name: str, arguments: dict[str, Any]) -> str:
+        if name in TASK_TOOL_NAMES:
+            return tasks.handle(name, arguments)
+        if tasks.current.approach is None:
+            raise ValueError(
+                f"{tasks.current.label} has no approach yet; call add_tasks or "
+                "propose_approaches first"
+            )
+        return execute_tool(self._computer, self._factorio, name, arguments)

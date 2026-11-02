@@ -6,14 +6,15 @@ from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
     FactorioAgent,
     game_state_observation,
-    notes_observation,
     observation,
+    tasks_observation,
     thinking,
     trim_game_states,
     trim_images,
-    trim_notes,
+    trim_tasks,
     usage_details,
 )
+from auto_factory.harness.tasks import TaskTree
 
 
 class FakeCall:
@@ -91,64 +92,85 @@ class FakeFactorio:
         self.actions: list[tuple[str, dict[str, object]]] = []
 
     def observe(self, radius: float) -> dict[str, object]:
-        return {"radius": radius, "player": {"position": {"x": 1, "y": 2}}}
+        return {"radius": radius, "player": {"world_position": {"x": 1, "y": 2}}}
 
     def execute(self, name: str, arguments: dict[str, object]) -> str:
         self.actions.append((name, arguments))
         return '{"queued":1}'
 
 
-def test_agent_executes_action_then_answer() -> None:
+APPROACHES = '{"approaches":["a","b"],"reason":"a is best"}'
+
+
+def computer_agent(
+    completions: FakeCompletions, computer: FakeComputer
+) -> FactorioAgent:
+    return FactorioAgent(
+        completions.create, computer, "test-model", report=lambda _: None
+    )
+
+
+def test_agent_acts_on_an_approach_then_completes_goal() -> None:
     completions = FakeCompletions(
         [
+            FakeCall("propose_approaches", APPROACHES),
             FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
-            FakeCall("answer", '{"content":"done"}'),
+            FakeCall("complete_task", '{"result":"done"}'),
         ]
     )
     computer = FakeComputer()
-    agent = FactorioAgent(
-        completions.create,
-        computer,
-        "test-model",
-        report=lambda _: None,
-    )
 
-    assert agent.run("move") == "done"
+    assert computer_agent(completions, computer).run("move") == "done"
     assert computer.actions == [("game_action", ("move_up", 0.5))]
-    assert len(completions.requests) == 2
+    assert len(completions.requests) == 3
 
 
-def test_notes_are_shown_in_later_steps() -> None:
+def test_game_tools_need_an_approach() -> None:
     completions = FakeCompletions(
         [
-            FakeCall("note", '{"content":"ore at 3,4"}'),
-            FakeCall("note", '{"content":"furnace needed"}'),
-            FakeCall("answer", '{"content":"done"}'),
+            FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
+            FakeCall("fail_task", '{"reason":"gave up"}'),
         ]
     )
-    agent = FactorioAgent(
-        completions.create,
-        FakeComputer(),
-        "test-model",
-        report=lambda _: None,
-    )
+    computer = FakeComputer()
 
-    assert agent.run("explore") == "done"
-    first, second, third = (request["messages"] for request in completions.requests)
-    assert not any(str(message["content"]).startswith("<notes>") for message in first)
-    assert second[-1]["content"] == "<notes>\n1. ore at 3,4\n</notes>"
-    assert third[-1]["content"] == (
-        "<notes>\n1. ore at 3,4\n2. furnace needed\n</notes>"
+    assert computer_agent(completions, computer).run("move") == "Failed: gave up"
+    assert computer.actions == []
+    assert completions.requests[1]["messages"][-3]["content"].startswith(
+        "error: the goal has no approach yet"
     )
 
 
-def test_trim_notes_keeps_latest() -> None:
-    messages = [notes_observation(["a"]), notes_observation(["a", "b"])]
+def test_closing_a_task_drops_its_steps() -> None:
+    completions = FakeCompletions(
+        [
+            FakeCall("add_tasks", '{"tasks":[{"title":"walk","done_when":"moved"}]}'),
+            FakeCall("propose_approaches", APPROACHES),
+            FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
+            FakeCall("complete_task", '{"result":"walked north"}'),
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
 
-    trim_notes(messages)
+    assert computer_agent(completions, FakeComputer()).run("move") == "done"
+    last = completions.requests[-1]["messages"]
+    called = [
+        call["function"]["name"]
+        for message in last
+        for call in message.get("tool_calls", [])
+    ]
+    assert called == ["add_tasks"]
+    assert "[x] 1. walk -> walked north" in last[-1]["content"]
 
-    assert messages[0]["content"] == "<notes>\n[superseded by later notes]\n</notes>"
-    assert messages[1]["content"] == "<notes>\n1. a\n2. b\n</notes>"
+
+def test_trim_tasks_keeps_latest() -> None:
+    first = TaskTree("goal")
+    messages = [tasks_observation(first), tasks_observation(TaskTree("goal 2"))]
+
+    trim_tasks(messages)
+
+    assert messages[0]["content"] == "<tasks>\n[superseded by later tasks]\n</tasks>"
+    assert messages[1]["content"].startswith("<tasks>\nGoal: goal 2\n")
 
 
 def test_observation_embeds_png() -> None:
@@ -160,8 +182,9 @@ def test_observation_embeds_png() -> None:
 def test_api_agent_uses_state_without_screenshot() -> None:
     completions = FakeCompletions(
         [
+            FakeCall("propose_approaches", APPROACHES),
             FakeCall("api_craft", '{"recipe":"iron-gear-wheel","count":1}'),
-            FakeCall("answer", '{"content":"crafted"}'),
+            FakeCall("complete_task", '{"result":"crafted"}'),
         ]
     )
     factorio = FakeFactorio()
@@ -179,7 +202,7 @@ def test_api_agent_uses_state_without_screenshot() -> None:
         ("api_craft", {"recipe": "iron-gear-wheel", "count": 1})
     ]
     tools = completions.requests[0]["tools"]
-    assert {tool["function"]["name"] for tool in tools} >= {"api_craft", "answer"}
+    assert {tool["function"]["name"] for tool in tools} >= {"api_craft", "add_tasks"}
     assert "game_action" not in {tool["function"]["name"] for tool in tools}
 
 

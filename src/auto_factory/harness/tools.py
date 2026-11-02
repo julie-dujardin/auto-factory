@@ -31,12 +31,11 @@ def _tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, 
     }
 
 
-COORDINATE = {"type": "number", "description": "Absolute Factorio world coordinate."}
 OFFSET = {
     "type": "number",
     "minimum": -100,
     "maximum": 100,
-    "description": "Relative offset in tiles from the player position.",
+    "description": "Tiles from the player; positive dx is east, positive dy is south.",
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
 
@@ -154,10 +153,44 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_find",
+        "Search entities around the player over a wider area than api_scan, e.g. the "
+        "nearest iron-ore or every furnace with no_fuel. Returns per-name totals for all "
+        "matches and the first limit entities after sorting. Needs a name or type.",
+        _object_schema(
+            {
+                "name": {
+                    "type": "string",
+                    "description": "Substring of the entity name, e.g. ore or "
+                    "burner-mining-drill. Empty matches any name.",
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Exact entity type, e.g. resource, tree, furnace, "
+                    "mining-drill, container. Empty matches any type.",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Exact entity status, e.g. working, no_fuel, "
+                    "no_input_fluid, waiting_for_source_items. Empty matches any.",
+                },
+                "radius": {"type": "number", "minimum": 1, "maximum": 256},
+                "sort": {
+                    "type": "string",
+                    "enum": ["distance", "amount", "name"],
+                    "description": "amount is resource amount or total item count, "
+                    "largest first.",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            ["name", "type", "status", "radius", "sort", "limit"],
+        ),
+    ),
+    _tool(
         "api_walk_to",
-        "Walk by a relative offset in tiles using normal character movement and "
-        "collision. Positive dx is east and positive dy is south. Returns whether the "
-        "player arrived or got blocked, and the final position.",
+        "Walk by an offset in tiles using normal character movement and collision. "
+        "Returns whether the player arrived or got blocked, how far it moved, and the "
+        "offset still remaining to the target.",
         _object_schema(
             {
                 "dx": OFFSET,
@@ -168,15 +201,15 @@ API_TOOLS = [
     ),
     _tool(
         "api_mine",
-        "Mine the entity or resource at an absolute world position using normal reach "
+        "Mine the entity or resource at an offset from the player using normal reach "
         "and mining speed, until count items were gained or the target is gone.",
         _object_schema(
             {
-                "x": COORDINATE,
-                "y": COORDINATE,
+                "dx": OFFSET,
+                "dy": OFFSET,
                 "count": {"type": "integer", "minimum": 1, "maximum": 500},
             },
-            ["x", "y", "count"],
+            ["dx", "dy", "count"],
         ),
     ),
     _tool(
@@ -192,15 +225,16 @@ API_TOOLS = [
     ),
     _tool(
         "api_place",
-        "Place one item from inventory at an absolute world position within normal build reach.",
+        "Place one item from inventory at an offset from the player within normal "
+        "build reach.",
         _object_schema(
             {
                 "item": {"type": "string"},
-                "x": COORDINATE,
-                "y": COORDINATE,
+                "dx": OFFSET,
+                "dy": OFFSET,
                 "direction": DIRECTION,
             },
-            ["item", "x", "y", "direction"],
+            ["item", "dx", "dy", "direction"],
         ),
     ),
     _tool(
@@ -209,12 +243,12 @@ API_TOOLS = [
         _object_schema(
             {
                 "entity": {"type": "string"},
-                "x": COORDINATE,
-                "y": COORDINATE,
+                "dx": OFFSET,
+                "dy": OFFSET,
                 "item": {"type": "string"},
                 "count": {"type": "integer", "minimum": 1, "maximum": 10000},
             },
-            ["entity", "x", "y", "item", "count"],
+            ["entity", "dx", "dy", "item", "count"],
         ),
     ),
     _tool(
@@ -223,12 +257,12 @@ API_TOOLS = [
         _object_schema(
             {
                 "entity": {"type": "string"},
-                "x": COORDINATE,
-                "y": COORDINATE,
+                "dx": OFFSET,
+                "dy": OFFSET,
                 "item": {"type": "string"},
                 "count": {"type": "integer", "minimum": 1, "maximum": 10000},
             },
-            ["entity", "x", "y", "item", "count"],
+            ["entity", "dx", "dy", "item", "count"],
         ),
     ),
     _tool(
@@ -237,11 +271,11 @@ API_TOOLS = [
         _object_schema(
             {
                 "entity": {"type": "string"},
-                "x": COORDINATE,
-                "y": COORDINATE,
+                "dx": OFFSET,
+                "dy": OFFSET,
                 "reverse": {"type": "boolean"},
             },
-            ["entity", "x", "y", "reverse"],
+            ["entity", "dx", "dy", "reverse"],
         ),
     ),
     _tool(
@@ -255,25 +289,84 @@ API_TOOLS = [
 ]
 
 
-NOTE_TOOL = _tool(
-    "note",
-    "Save a note for later steps, such as a plan, a discovered location, or a lesson "
-    "from a failed action. All notes are shown after every observation.",
-    _object_schema(
-        {"content": {"type": "string", "maxLength": 1000}},
-        ["content"],
-    ),
-)
+TASK_TEXT = {"type": "string", "maxLength": 500}
 
-
-ANSWER_TOOL = _tool(
-    "answer",
-    "Finish the task and report the result.",
-    _object_schema(
-        {"content": {"type": "string", "description": "A concise completion report."}},
-        ["content"],
+TASK_TOOLS = [
+    _tool(
+        "add_tasks",
+        "Split the current task into ordered subtasks. The first one becomes current.",
+        _object_schema(
+            {
+                "tasks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "items": _object_schema(
+                        {
+                            "title": {"type": "string", "maxLength": 200},
+                            "done_when": {
+                                "type": "string",
+                                "maxLength": 300,
+                                "description": "A condition you can check in the "
+                                "observations.",
+                            },
+                        },
+                        ["title", "done_when"],
+                    ),
+                }
+            },
+            ["tasks"],
+        ),
     ),
-)
+    _tool(
+        "propose_approaches",
+        "Give the current task 2-4 genuinely different ways to do it, best first. The "
+        "first is tried; the rest are fallbacks taken in order by fail_task.",
+        _object_schema(
+            {
+                "approaches": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 4,
+                    "items": {"type": "string", "maxLength": 300},
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Why the first approach fits the goal best.",
+                },
+            },
+            ["approaches", "reason"],
+        ),
+    ),
+    _tool(
+        "complete_task",
+        "Close the current task once its done_when holds. Its steps leave your context.",
+        _object_schema(
+            {
+                "result": TASK_TEXT
+                | {
+                    "description": "What was achieved, with the locations and facts "
+                    "later tasks need."
+                }
+            },
+            ["result"],
+        ),
+    ),
+    _tool(
+        "fail_task",
+        "Abandon the current approach. The next approach takes over, or the parent "
+        "task replans. Its steps leave your context.",
+        _object_schema(
+            {
+                "reason": TASK_TEXT
+                | {"description": "Why it failed and what was learned."}
+            },
+            ["reason"],
+        ),
+    ),
+]
+TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
 
 
 def tools_for_mode(mode: ControlMode) -> list[dict[str, Any]]:
@@ -282,7 +375,7 @@ def tools_for_mode(mode: ControlMode) -> list[dict[str, Any]]:
         selected.extend(DESKTOP_TOOLS)
     if mode in {"api", "mixed"}:
         selected.extend(API_TOOLS)
-    selected.extend([NOTE_TOOL, ANSWER_TOOL])
+    selected.extend(TASK_TOOLS)
     return selected
 
 
@@ -292,7 +385,7 @@ def execute_tool(
     name: str,
     arguments: dict[str, Any],
 ) -> str:
-    if name in {"answer", "note"}:
+    if name in TASK_TOOL_NAMES:
         raise ValueError(f"{name} is handled by the agent loop")
     if name.startswith("api_"):
         if factorio is None:

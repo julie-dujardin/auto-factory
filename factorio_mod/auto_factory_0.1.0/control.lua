@@ -19,6 +19,9 @@ end
 
 local MAX_ACTION_TICKS = 60 * 60
 local STUCK_TICKS = 30
+-- Sliding along an obstacle still moves the character, so blocking is judged by
+-- progress toward the target. 8-way walking is at worst cos(22.5°) efficient.
+local MIN_WALK_PROGRESS = 0.5
 
 local OBSERVABLE_TYPES = {
   "accumulator",
@@ -107,8 +110,14 @@ local function get_player(params)
   return player
 end
 
-local function position_from(params)
-  return {x = required_number(params, "x"), y = required_number(params, "y")}
+-- Every position crossing the API is an offset from the player, so results can be
+-- passed straight back as arguments.
+local function position_from(player, params)
+  local origin = player.position
+  return {
+    x = origin.x + required_number(params, "dx"),
+    y = origin.y + required_number(params, "dy"),
+  }
 end
 
 local function direction_from(params)
@@ -132,6 +141,10 @@ end
 
 local function plain_position(position)
   return {x = rounded(position.x), y = rounded(position.y)}
+end
+
+local function offset_from(origin, position)
+  return {dx = rounded(position.x - origin.x), dy = rounded(position.y - origin.y)}
 end
 
 local function inventory_contents(inventory)
@@ -203,10 +216,10 @@ local function action_summary(player, action)
     kind = action.kind,
     done = action.done == true,
     reason = action.reason,
-    position = plain_position(player.position),
   }
   if action.kind == "walk_to" then
-    summary.target = plain_position(action.target)
+    summary.moved = offset_from(action.start, player.position)
+    summary.remaining = offset_from(player.position, action.target)
   elseif action.kind == "mine" then
     summary.target = action.target_name
     summary.requested = action.count
@@ -244,16 +257,19 @@ local function tick_walk_to(player, action)
     finish(player, action, "arrived")
     return
   end
-  if action.last_position and distance_squared(position, action.last_position) < 1e-6 then
-    action.stuck_ticks = action.stuck_ticks + 1
-    if action.stuck_ticks >= STUCK_TICKS then
+  local remaining = math.sqrt(distance_squared(position, action.target))
+  if not action.checkpoint_tick then
+    action.checkpoint_tick = game.tick
+    action.checkpoint_remaining = remaining
+  elseif game.tick - action.checkpoint_tick >= STUCK_TICKS then
+    local expected = player.character_running_speed * (game.tick - action.checkpoint_tick)
+    if action.checkpoint_remaining - remaining < expected * MIN_WALK_PROGRESS then
       finish(player, action, "blocked")
       return
     end
-  else
-    action.stuck_ticks = 0
+    action.checkpoint_tick = game.tick
+    action.checkpoint_remaining = remaining
   end
-  action.last_position = {x = position.x, y = position.y}
   player.walking_state = {walking = true, direction = direction}
 end
 
@@ -344,6 +360,52 @@ local function research_state(force)
   }
 end
 
+local function entity_status(entity)
+  local ok, status = pcall(function() return entity.status end)
+  if ok and status then
+    return STATUS_NAMES[status] or status
+  end
+  return nil
+end
+
+local function entity_entry(entity, origin)
+  local entry = {
+    name = entity.name,
+    type = entity.type,
+    position = offset_from(origin, entity.position),
+  }
+  if entity.supports_direction then
+    entry.direction = DIRECTION_NAMES[entity.direction]
+  end
+  if entity.type == "resource" then
+    entry.amount = entity.amount
+  end
+  if entity.health then
+    entry.health = rounded(entity.health)
+  end
+  local contents = entity_contents(entity)
+  if next(contents) then
+    entry.items = contents
+  end
+  local recipe_ok, recipe = pcall(entity.get_recipe)
+  if recipe_ok and recipe then
+    entry.recipe = recipe.name
+  end
+  entry.status = entity_status(entity)
+  return entry
+end
+
+local function entity_amount(entity)
+  if entity.type == "resource" then
+    return entity.amount
+  end
+  local total = 0
+  for _, count in pairs(entity_contents(entity)) do
+    total = total + count
+  end
+  return total
+end
+
 local handlers = {}
 
 function handlers.observe(params)
@@ -366,7 +428,7 @@ function handlers.observe(params)
     summary.count = summary.count + 1
     summary.amount = summary.amount + entity.amount
     if summary.nearest_distance == nil or distance < summary.nearest_distance then
-      summary.nearest = plain_position(entity.position)
+      summary.nearest = offset_from(player.position, entity.position)
       summary.nearest_distance = distance
     end
   end
@@ -381,29 +443,9 @@ function handlers.observe(params)
     type = OBSERVABLE_TYPES,
     limit = 100,
   }
+  local origin = player.position
   for _, entity in pairs(nearby) do
-    local entry = {
-      name = entity.name,
-      type = entity.type,
-      position = plain_position(entity.position),
-      direction = DIRECTION_NAMES[entity.direction],
-    }
-    if entity.health then
-      entry.health = rounded(entity.health)
-    end
-    local contents = entity_contents(entity)
-    if next(contents) then
-      entry.items = contents
-    end
-    local recipe_ok, recipe = pcall(entity.get_recipe)
-    if recipe_ok and recipe then
-      entry.recipe = recipe.name
-    end
-    local status_ok, status = pcall(function() return entity.status end)
-    if status_ok and status then
-      entry.status = STATUS_NAMES[status] or status
-    end
-    table.insert(entities, entry)
+    table.insert(entities, entity_entry(entity, origin))
   end
 
   local action = storage.actions[player.index]
@@ -414,7 +456,7 @@ function handlers.observe(params)
     player = {
       index = player.index,
       name = player.name,
-      position = plain_position(player.position),
+      world_position = plain_position(player.position),
       health = player.character.health,
       inventory = inventory_contents(player.get_main_inventory()),
       crafting_queue_size = player.crafting_queue_size,
@@ -428,6 +470,112 @@ function handlers.observe(params)
   }
 end
 
+local FIND_SORTS = {distance = true, amount = true, name = true}
+
+-- Substring names are resolved to prototypes so the engine does the spatial filtering.
+local function matching_entity_names(fragment)
+  local names = {}
+  for name in pairs(prototypes.entity) do
+    if string.find(name, fragment, 1, true) then
+      table.insert(names, name)
+    end
+  end
+  if #names == 0 then
+    fail("no entity prototype name contains " .. fragment)
+  end
+  return names
+end
+
+-- The engine returns nothing for an unknown type, which reads as "none nearby".
+local function check_entity_type(entity_type)
+  for _, prototype in pairs(prototypes.entity) do
+    if prototype.type == entity_type then
+      return
+    end
+  end
+  fail("unknown entity type: " .. entity_type)
+end
+
+function handlers.find(params)
+  local player = get_player(params)
+  local radius = math.max(1, math.min(256, required_number(params, "radius")))
+  local limit = math.max(1, math.min(50, math.floor(required_number(params, "limit"))))
+  local sort = params.sort or "distance"
+  if not FIND_SORTS[sort] then
+    fail("sort must be distance, amount, or name")
+  end
+  local name = params.name or ""
+  local entity_type = params.type or ""
+  local status = params.status or ""
+  if name == "" and entity_type == "" then
+    fail("give a name or type filter")
+  end
+
+  local filter = {position = player.position, radius = radius}
+  if name ~= "" then
+    filter.name = matching_entity_names(name)
+  end
+  if entity_type ~= "" then
+    check_entity_type(entity_type)
+    filter.type = entity_type
+  end
+  local found_ok, found = pcall(player.surface.find_entities_filtered, filter)
+  if not found_ok then
+    fail(tostring(found))
+  end
+
+  local origin = player.position
+  local matches = {}
+  local totals = {}
+  for _, entity in pairs(found) do
+    if entity.valid and (status == "" or entity_status(entity) == status) then
+      local match = {
+        entity = entity,
+        distance = distance_squared(origin, entity.position),
+        amount = sort == "amount" and entity_amount(entity) or nil,
+      }
+      table.insert(matches, match)
+      local total = totals[entity.name]
+      if not total then
+        total = {count = 0}
+        totals[entity.name] = total
+      end
+      total.count = total.count + 1
+      if entity.type == "resource" then
+        total.amount = (total.amount or 0) + entity.amount
+      end
+    end
+  end
+
+  if sort == "distance" then
+    table.sort(matches, function(a, b) return a.distance < b.distance end)
+  elseif sort == "amount" then
+    table.sort(matches, function(a, b)
+      if a.amount ~= b.amount then return a.amount > b.amount end
+      return a.distance < b.distance
+    end)
+  else
+    table.sort(matches, function(a, b)
+      if a.entity.name ~= b.entity.name then return a.entity.name < b.entity.name end
+      return a.distance < b.distance
+    end)
+  end
+
+  local entities = {}
+  for index = 1, math.min(limit, #matches) do
+    local match = matches[index]
+    local entry = entity_entry(match.entity, origin)
+    entry.distance = rounded(math.sqrt(match.distance))
+    table.insert(entities, entry)
+  end
+  return {
+    radius = radius,
+    matched = #matches,
+    totals = totals,
+    entities = entities,
+  }
+end
+
 function handlers.walk_to(params)
   local player = get_player(params)
   local dx = math.max(-100, math.min(100, required_number(params, "dx")))
@@ -436,8 +584,8 @@ function handlers.walk_to(params)
   stop_player(player)
   storage.actions[player.index] = {
     kind = "walk_to",
+    start = {x = start.x, y = start.y},
     target = {x = start.x + dx, y = start.y + dy},
-    stuck_ticks = 0,
     until_tick = game.tick + MAX_ACTION_TICKS,
   }
   return action_summary(player, storage.actions[player.index])
@@ -445,7 +593,7 @@ end
 
 function handlers.mine(params)
   local player = get_player(params)
-  local position = position_from(params)
+  local position = position_from(player, params)
   local count = math.max(1, math.min(500, math.floor(required_number(params, "count"))))
   player.update_selected_entity(position)
   local target = player.selected
@@ -491,7 +639,7 @@ end
 function handlers.rotate(params)
   local player = get_player(params)
   local name = required_string(params, "entity")
-  local entity = find_entity(player, name, position_from(params))
+  local entity = find_entity(player, name, position_from(player, params))
   if not player.can_reach_entity(entity) then
     fail("the entity is outside reach")
   end
@@ -500,7 +648,7 @@ function handlers.rotate(params)
   end
   return {
     entity = name,
-    position = plain_position(entity.position),
+    position = offset_from(player.position, entity.position),
     direction = DIRECTION_NAMES[entity.direction],
   }
 end
@@ -548,7 +696,7 @@ end
 function handlers.place(params)
   local player = get_player(params)
   local item = required_string(params, "item")
-  local position = position_from(params)
+  local position = position_from(player, params)
   local direction = direction_from(params)
   if distance_squared(player.position, position) > player.build_distance ^ 2 then
     fail("the position is outside build reach")
@@ -575,7 +723,11 @@ function handlers.place(params)
   if remaining >= before then
     fail("Factorio did not place the item")
   end
-  return {placed = item, position = plain_position(position), direction = params.direction}
+  return {
+    placed = item,
+    position = offset_from(player.position, position),
+    direction = params.direction,
+  }
 end
 
 function handlers.insert(params)
@@ -583,7 +735,7 @@ function handlers.insert(params)
   local name = required_string(params, "entity")
   local item = required_string(params, "item")
   local count = math.max(1, math.floor(required_number(params, "count")))
-  local entity = find_entity(player, name, position_from(params))
+  local entity = find_entity(player, name, position_from(player, params))
   if not player.can_reach_entity(entity) then
     fail("the entity is outside reach")
   end
@@ -601,7 +753,7 @@ function handlers.take(params)
   local name = required_string(params, "entity")
   local item = required_string(params, "item")
   local count = math.max(1, math.floor(required_number(params, "count")))
-  local entity = find_entity(player, name, position_from(params))
+  local entity = find_entity(player, name, position_from(player, params))
   if not player.can_reach_entity(entity) then
     fail("the entity is outside reach")
   end
