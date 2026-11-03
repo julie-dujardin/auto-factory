@@ -177,7 +177,11 @@ API_TOOLS = [
         "generators can supply and demand_kw that its machines draw; poles with "
         "different ids share no power. Mining drills give mining_area: the corners of "
         "the area they mine, and mines: the amount left in it per resource they can "
-        "mine, or yield_percent for infinite ones such as crude oil.",
+        "mine, or yield_percent for infinite ones such as crude oil. Inserters set to "
+        "filter give filter_mode: whitelist moves only the items in filters, blacklist "
+        "all others; and stack_size_override when set. Splitters give input_priority "
+        "and output_priority: left, right, or none, seen facing their direction; and "
+        "filter: the item sent out the output_priority side and the rest out the other.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],

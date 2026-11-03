@@ -255,6 +255,17 @@ local function mined_resources(drill)
   return amounts
 end
 
+local function inserter_filters(inserter)
+  local items = {}
+  for slot = 1, inserter.filter_slot_count do
+    local filter = inserter.get_filter(slot)
+    if filter and filter.name then
+      table.insert(items, filter.name)
+    end
+  end
+  return items
+end
+
 -- Collects the electric networks of listed poles into networks.
 function entities.entry(entity, origin, networks)
   local entry = {
@@ -290,8 +301,21 @@ function entities.entry(entity, origin, networks)
   for field, counts in pairs(held_by_field(entity)) do
     entry[field] = counts
   end
-  if entity.type == "inserter" and entity.held_stack.valid_for_read then
-    entry.held = {[entity.held_stack.name] = entity.held_stack.count}
+  if entity.type == "inserter" then
+    if entity.held_stack.valid_for_read then
+      entry.held = {[entity.held_stack.name] = entity.held_stack.count}
+    end
+    if entity.filter_slot_count > 0 and entity.use_filters then
+      entry.filter_mode = entity.inserter_filter_mode
+      entry.filters = inserter_filters(entity)
+    end
+    local override = entity.inserter_stack_size_override
+    entry.stack_size_override = override > 0 and override or nil
+  end
+  if entity.type == "splitter" then
+    entry.input_priority = entity.splitter_input_priority
+    entry.output_priority = entity.splitter_output_priority
+    entry.filter = entity.splitter_filter and entity.splitter_filter.name
   end
   local fluids_ok, fluid_fields = pcall(fluids_by_field, entity)
   if fluids_ok then
