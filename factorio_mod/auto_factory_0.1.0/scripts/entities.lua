@@ -41,6 +41,9 @@ local INVENTORY_FIELDS = {
 
 -- Item counts per entry field, so a machine's ingredients, products and fuel stay apart.
 local function held_by_field(entity)
+  if entity.type == "item-entity" then
+    return {items = {[entity.stack.name] = entity.stack.count}}
+  end
   local fields = {}
   for index = 1, entity.get_max_inventory_index() do
     local inventory = entity.get_inventory(index)

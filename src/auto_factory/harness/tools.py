@@ -159,9 +159,10 @@ API_TOOLS = [
         "api_scan",
         "Read structured player, inventory, resource, and entity state around the "
         "player, including the items and fluids each entity holds, listing the 100 "
-        "nearest entities; omitted counts those beyond the cut. Machines split their "
-        "items into input, output, fuel, burnt_result, modules, and trash; other "
-        "inventories such as chests are items. Their fluids are input_fluids and "
+        "nearest entities, cliffs included; omitted counts those beyond the cut. "
+        "Machines split their items into input, output, fuel, burnt_result, modules, "
+        "and trash; other inventories, such as chests and the stack of an "
+        "item-on-ground, are items. Their fluids are input_fluids and "
         "output_fluids; pipes and tanks hold fluids. Inserters give held: the stack in "
         "their hand. Entities give an id that stays fixed as the player moves. "
         "Straight transport belt runs are one entry: position and id are the upstream "

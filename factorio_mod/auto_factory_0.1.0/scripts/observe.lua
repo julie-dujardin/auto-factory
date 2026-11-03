@@ -7,45 +7,16 @@ local research = require("scripts.research")
 
 local handlers = {}
 
-local OBSERVABLE_TYPES = {
-  "accumulator",
-  "ammo-turret",
-  "assembling-machine",
-  "beacon",
-  "boiler",
-  "burner-generator",
-  "car",
-  "cargo-wagon",
-  "container",
-  "electric-pole",
-  "furnace",
-  "generator",
-  "inserter",
-  "item-entity",
-  "lab",
-  "lamp",
-  "loader",
-  "locomotive",
-  "logistic-container",
-  "mining-drill",
-  "offshore-pump",
-  "pipe",
-  "pipe-to-ground",
-  "pump",
-  "radar",
-  "reactor",
-  "roboport",
-  "rocket-silo",
-  "simple-entity",
-  "solar-panel",
-  "splitter",
-  "storage-tank",
-  "train-stop",
-  "transport-belt",
-  "tree",
-  "turret",
-  "underground-belt",
-}
+-- Cliffs cannot be selected but block building.
+local listed_names = {}
+local function listed(entity)
+  local result = listed_names[entity.name]
+  if result == nil then
+    result = entity.type == "cliff" or ids.selectable(entity.prototype)
+    listed_names[entity.name] = result
+  end
+  return result
+end
 
 -- Entries after folding transport belts into runs, nearest first.
 local NEARBY_LISTED = 100
@@ -77,10 +48,12 @@ function handlers.observe(params)
     summary.nearest_distance = nil
   end
 
+  -- Resources are summarised above and the player has its own section.
   local nearby = player.surface.find_entities_filtered {
     position = player.position,
     radius = radius,
-    type = OBSERVABLE_TYPES,
+    type = {"resource", "character"},
+    invert = true,
   }
   local origin = player.position
   local transport_belts = {}
@@ -88,7 +61,7 @@ function handlers.observe(params)
   for _, entity in pairs(nearby) do
     if entity.type == "transport-belt" then
       table.insert(transport_belts, entity)
-    else
+    elseif listed(entity) then
       table.insert(candidates, {
         entity = entity,
         distance = common.distance_squared(origin, entity.position),

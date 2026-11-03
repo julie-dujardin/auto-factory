@@ -7,17 +7,18 @@ local KINDS = {"item", "fluid", "recipe", "entity", "entity_type", "technology",
 local SEARCH_LIMIT = 10
 local SIMILAR_LIMIT = 8
 
--- Hidden prototypes and entities the player cannot select, such as corpses and
--- explosions, are valid IDs but never suggested.
+-- False for entities the player cannot select, such as corpses and explosions.
+function ids.selectable(prototype)
+  local box = prototype.selection_box
+  return prototype.selectable_in_game and box.left_top.x < box.right_bottom.x
+end
+
+-- Hidden prototypes and unselectable entities are valid IDs but never suggested.
 local function suggested(kind, prototype)
   if prototype.hidden then
     return false
   end
-  if kind ~= "entity" then
-    return true
-  end
-  local box = prototype.selection_box
-  return prototype.selectable_in_game and box.left_top.x < box.right_bottom.x
+  return kind ~= "entity" or ids.selectable(prototype)
 end
 
 local function names(kind, everything)
