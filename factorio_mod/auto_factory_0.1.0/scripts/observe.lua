@@ -58,7 +58,6 @@ function handlers.observe(params)
     position = player.position,
     radius = radius,
     type = "resource",
-    limit = 1000,
   }
   for _, entity in pairs(resource_entities) do
     local summary = resources[entity.name]
