@@ -20,15 +20,69 @@ function entities.inventory_contents(inventory)
   return result
 end
 
+-- Entry field per inventory name; chests, trunks, ammo and the rest go to items.
+local INVENTORY_FIELDS = {
+  agricultural_tower_input = "input",
+  agricultural_tower_modules = "modules",
+  agricultural_tower_output = "output",
+  assembling_machine_dump = "trash",
+  beacon_modules = "modules",
+  burnt_result = "burnt_result",
+  crafter_input = "input",
+  crafter_modules = "modules",
+  crafter_output = "output",
+  crafter_trash = "trash",
+  fuel = "fuel",
+  lab_input = "input",
+  lab_modules = "modules",
+  lab_trash = "trash",
+  mining_drill_modules = "modules",
+}
+
+-- Item counts per entry field, so a machine's ingredients, products and fuel stay apart.
+local function held_by_field(entity)
+  local fields = {}
+  for index = 1, entity.get_max_inventory_index() do
+    local inventory = entity.get_inventory(index)
+    if inventory and inventory.valid and not inventory.is_empty() then
+      local field = INVENTORY_FIELDS[inventory.name] or "items"
+      local counts = fields[field] or {}
+      for name, count in pairs(entities.inventory_contents(inventory)) do
+        counts[name] = (counts[name] or 0) + count
+      end
+      fields[field] = counts
+    end
+  end
+  return fields
+end
+
+local FLUID_FIELDS = {input = "input_fluids", output = "output_fluids"}
+
+-- Fluid amounts per entry field, from what each fluidbox does in the recipe.
+local function fluids_by_field(entity)
+  local fields = {}
+  for index = 1, entity.fluids_count do
+    local fluid = entity.get_fluid(index)
+    if fluid then
+      -- A crafting machine's recipe can merge prototypes, returned as an array.
+      local prototype = entity.get_fluid_box_prototype(index)
+      if prototype and not prototype.object_name then
+        prototype = prototype[1]
+      end
+      local field = prototype and FLUID_FIELDS[prototype.production_type] or "fluids"
+      local amounts = fields[field] or {}
+      amounts[fluid.name] = common.rounded((amounts[fluid.name] or 0) + fluid.amount)
+      fields[field] = amounts
+    end
+  end
+  return fields
+end
+
 function entities.contents(entity)
   local result = {}
-  local maximum = entity.get_max_inventory_index()
-  for index = 1, maximum do
-    local inventory = entity.get_inventory(index)
-    if inventory and inventory.valid then
-      for name, count in pairs(entities.inventory_contents(inventory)) do
-        result[name] = (result[name] or 0) + count
-      end
+  for _, counts in pairs(held_by_field(entity)) do
+    for name, count in pairs(counts) do
+      result[name] = (result[name] or 0) + count
     end
   end
   return result
@@ -150,15 +204,16 @@ function entities.entry(entity, origin)
   if entity.health then
     entry.health = common.rounded(entity.health)
   end
-  local contents = entities.contents(entity)
-  if next(contents) then
-    entry.items = contents
+  for field, counts in pairs(held_by_field(entity)) do
+    entry[field] = counts
   end
-  local fluids_ok, fluids = pcall(entity.get_fluid_contents)
-  if fluids_ok and next(fluids) then
-    entry.fluids = {}
-    for fluid, amount in pairs(fluids) do
-      entry.fluids[fluid] = common.rounded(amount)
+  if entity.type == "inserter" and entity.held_stack.valid_for_read then
+    entry.held = {[entity.held_stack.name] = entity.held_stack.count}
+  end
+  local fluids_ok, fluid_fields = pcall(fluids_by_field, entity)
+  if fluids_ok then
+    for field, amounts in pairs(fluid_fields) do
+      entry[field] = amounts
     end
   end
   entry.lanes = belts.lanes(entity)
