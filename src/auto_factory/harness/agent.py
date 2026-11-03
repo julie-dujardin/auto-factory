@@ -272,13 +272,19 @@ class FactorioAgent:
         self._report = report
         self._tools = tools_for(desktop=computer is not None, api=factorio is not None)
 
-    def run(self, task: str) -> str:
+    def run(self, task: str, scenario: str | None = None) -> str:
+        """scenario describes the world the run starts in, apart from the goal."""
+        prompt = (
+            task
+            if scenario is None
+            else f"<scenario>\n{scenario}\n</scenario>\n\n{task}"
+        )
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
                 "content": SYSTEM_PROMPT + "\n" + self._mode_prompt,
             },
-            {"role": "user", "content": task},
+            {"role": "user", "content": prompt},
         ]
         tasks = TaskTree(task)
         reports: list[str] = []

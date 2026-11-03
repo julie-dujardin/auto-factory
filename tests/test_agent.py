@@ -157,6 +157,16 @@ def test_agent_acts_on_an_approach_then_completes_goal() -> None:
     assert len(completions.requests) == 4
 
 
+def test_scenario_precedes_the_goal() -> None:
+    completions = FakeCompletions([FakeCall("complete_task", '{"result":"done"}')])
+
+    computer_agent(completions, FakeComputer()).run("move", "A furnace stands east.")
+
+    assert completions.requests[0]["messages"][1]["content"] == (
+        "<scenario>\nA furnace stands east.\n</scenario>\n\nmove"
+    )
+
+
 def test_cut_off_turn_warns_to_think_less() -> None:
     completions = FakeCompletions([[], FakeCall("fail_task", '{"reason":"gave up"}')])
 

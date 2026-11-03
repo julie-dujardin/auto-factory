@@ -93,3 +93,12 @@ def test_reasoning_effort_defaults_to_medium() -> None:
         cli.parser().parse_args(["--reasoning-effort", "low", "x"]).reasoning_effort
         == "low"
     )
+
+
+def test_scenario_reads_its_description(monkeypatch, tmp_path) -> None:
+    (tmp_path / "belts.md").write_text("An iron line runs east.\n")
+    monkeypatch.setattr(cli, "SCENARIOS", tmp_path)
+
+    assert cli.scenario_description("belts") == "An iron line runs east."
+    with pytest.raises(ValueError, match="available: belts"):
+        cli.scenario_description("../belts")

@@ -30,6 +30,14 @@ Set your objective:
 uv run --env-file .env auto-factory --control mixed "launch 10 rockets per minute"
 ```
 
+### Scenarios
+
+When a run starts from one of your saves, describe that save's world in `scenarios/<name>.md` and pass `--scenario <name>`. The description goes in the prompt before the objective, and the trace is tagged `scenario:<name>`.
+
+```bash
+uv run --env-file .env auto-factory --control api --scenario belt-factory "automate transport belts"
+```
+
 ## Call tools by hand
 
 `auto-factory-tool` sends one API tool call over RCON, exactly as the agent would, and prints the result:

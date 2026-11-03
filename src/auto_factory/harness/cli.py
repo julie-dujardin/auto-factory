@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from langfuse import get_client, propagate_attributes
@@ -13,6 +14,8 @@ from ..control.computer import Computer, DesktopComputer, Screen, WindowScreen
 from ..control.factorio import FactorioAPI, RconFactorioAPI, rcon_environment
 from .agent import REASONING_EFFORTS, FactorioAgent
 from .tools import ControlMode
+
+SCENARIOS = Path(__file__).resolve().parents[3] / "scenarios"
 
 
 def parser() -> argparse.ArgumentParser:
@@ -40,11 +43,24 @@ def parser() -> argparse.ArgumentParser:
         help="Thinking per turn; a turn cut off while thinking retries one lower",
     )
     result.add_argument(
+        "--scenario",
+        help=f"Name of the save's description in {SCENARIOS}, without .md",
+    )
+    result.add_argument(
         "--check-api",
         action="store_true",
         help="Print one Factorio API observation and exit",
     )
     return result
+
+
+def scenario_description(name: str) -> str:
+    available = sorted(path.stem for path in SCENARIOS.glob("*.md"))
+    if name not in available:
+        raise ValueError(
+            f"unknown scenario {name!r}; available: {', '.join(available) or 'none'}"
+        )
+    return (SCENARIOS / f"{name}.md").read_text().strip()
 
 
 def researched_count(factorio: FactorioAPI) -> int:
@@ -81,6 +97,13 @@ def main() -> None:
     if args.max_steps < 1:
         print("--max-steps must be positive.", file=sys.stderr)
         raise SystemExit(2)
+    scenario: str | None = None
+    if args.scenario is not None:
+        try:
+            scenario = scenario_description(args.scenario)
+        except ValueError as exc:
+            print(f"--scenario: {exc}", file=sys.stderr)
+            raise SystemExit(2) from None
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("Set OPENAI_API_KEY.", file=sys.stderr)
@@ -127,13 +150,18 @@ def main() -> None:
         langfuse.start_as_current_observation(
             as_type="agent", name="episode", input=args.task
         ) as episode,
-        propagate_attributes(trace_name="episode", tags=[control, model]),
+        propagate_attributes(
+            trace_name="episode",
+            tags=[control, model]
+            + ([f"scenario:{args.scenario}"] if args.scenario else []),
+            metadata={"scenario": args.scenario} if args.scenario else None,
+        ),
     ):
         if url := langfuse.get_trace_url():
             print(f"Trace: {url}", flush=True)
         research_start = researched_count(factorio) if factorio else None
         try:
-            answer = agent.run(args.task)
+            answer = agent.run(args.task, scenario)
         except KeyboardInterrupt:
             episode.update(level="WARNING", status_message="stopped by user")
             print("\nStopped.", file=sys.stderr)
