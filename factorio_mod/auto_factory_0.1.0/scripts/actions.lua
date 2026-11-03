@@ -41,8 +41,9 @@ local function summary(player, action)
     reason = action.reason,
   }
   if action.kind == "walk_to" then
-    result.moved = common.offset_from(action.start, player.position)
-    result.remaining = common.offset_from(player.position, action.target)
+    local origin = common.origin(player)
+    result.moved = common.offset_from(action.start, origin)
+    result.remaining = common.offset_from(origin, action.target)
   elseif action.kind == "mine" then
     result.target = action.target_name
     result.requested = action.count
@@ -194,11 +195,11 @@ function handlers.walk_to(params)
   local player = common.get_player(params)
   local dx = math.max(-100, math.min(100, common.required_number(params, "dx")))
   local dy = math.max(-100, math.min(100, common.required_number(params, "dy")))
-  local start = player.position
+  local start = common.origin(player)
   stop_player(player)
   storage.actions[player.index] = {
     kind = "walk_to",
-    start = {x = start.x, y = start.y},
+    start = start,
     target = {x = start.x + dx, y = start.y + dy},
     until_tick = game.tick + MAX_ACTION_TICKS,
   }

@@ -40,7 +40,7 @@ function handlers.observe(params)
     summary.count = summary.count + 1
     summary.amount = summary.amount + entity.amount
     if summary.nearest_distance == nil or distance < summary.nearest_distance then
-      summary.nearest = common.offset_from(player.position, entity.position)
+      summary.nearest = common.offset_from(common.origin(player), entity.position)
       summary.nearest_distance = distance
     end
   end
@@ -55,7 +55,7 @@ function handlers.observe(params)
     type = {"resource", "character"},
     invert = true,
   }
-  local origin = player.position
+  local origin = common.origin(player)
   local transport_belts = {}
   local candidates = {}
   for _, entity in pairs(nearby) do
@@ -89,7 +89,7 @@ function handlers.observe(params)
     player = {
       index = player.index,
       name = player.name,
-      world_position = common.plain_position(player.position),
+      world_position = common.origin(player),
       health = player.character.health,
       inventory = entities.inventory_contents(player.get_main_inventory()),
       crafting_queue_size = player.crafting_queue_size,
@@ -157,7 +157,7 @@ function handlers.find(params)
     common.fail(tostring(found))
   end
 
-  local origin = player.position
+  local origin = common.origin(player)
   local matches = {}
   local totals = {}
   for _, entity in pairs(found) do

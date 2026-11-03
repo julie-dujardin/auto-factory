@@ -154,7 +154,7 @@ function layout.start(player, params, width, height)
   local at = params.at or "offset"
   local id = math.floor(tonumber(params.anchor) or 0)
   if at == "offset" then
-    local origin = id == 0 and player.position or entities.by_id(id).position
+    local origin = id == 0 and common.origin(player) or entities.by_id(id).position
     local requested = {
       x = origin.x + common.required_number(params, "dx"),
       y = origin.y + common.required_number(params, "dy"),

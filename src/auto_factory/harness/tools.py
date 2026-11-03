@@ -36,7 +36,8 @@ OFFSET = {
     "type": "number",
     "minimum": -100,
     "maximum": 100,
-    "description": "Tiles from the player; positive dx is east, positive dy is south.",
+    "description": "Tiles from the centre of the player's tile; positive dx is east, "
+    "positive dy is south.",
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
 LINE_COUNT = {"type": "integer", "minimum": 1, "maximum": 50}
@@ -625,7 +626,7 @@ MIXED_TOOLS = [
 ]
 
 
-TASK_TEXT = {"type": "string", "maxLength": 500}
+TASK_TEXT = {"type": "string", "maxLength": 2000}
 
 TASK_TOOLS = [
     _tool(

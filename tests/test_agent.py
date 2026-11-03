@@ -7,6 +7,7 @@ import pytest
 
 from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
+    CUT_OFF_CALL,
     CUT_OFF_WARNING,
     FactorioAgent,
     fell_short,
@@ -39,6 +40,10 @@ class FakeCall:
         }
 
 
+class CutOff(list[FakeCall]):
+    """Calls of a turn the output limit cut off in its last call."""
+
+
 class FakeCompletions:
     def __init__(self, calls: list[FakeCall | list[FakeCall]]) -> None:
         self.calls = calls
@@ -57,7 +62,8 @@ class FakeCompletions:
         tool_calls = calls if isinstance(calls, list) else [calls]
         message = SimpleNamespace(content=None, tool_calls=tool_calls)
         # An empty list stands for a turn cut off while thinking.
-        finish_reason = "tool_calls" if tool_calls else "length"
+        cut_off = not tool_calls or isinstance(calls, CutOff)
+        finish_reason = "length" if cut_off else "tool_calls"
         return SimpleNamespace(
             choices=[SimpleNamespace(message=message, finish_reason=finish_reason)]
         )
@@ -158,6 +164,30 @@ def test_cut_off_turn_warns_to_think_less() -> None:
     messages = completions.requests[1]["messages"]
     warnings = [m for m in messages if m["content"] == CUT_OFF_WARNING["content"]]
     assert len(warnings) == 1
+
+
+def test_call_cut_off_by_output_limit_does_not_run() -> None:
+    completions = FakeCompletions(
+        [
+            FakeCall("propose_approaches", APPROACHES),
+            CutOff(
+                [
+                    FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
+                    FakeCall("complete_task", "{}", "call-2"),
+                ]
+            ),
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+    computer = FakeComputer()
+
+    assert computer_agent(completions, computer).run("move") == "done"
+    assert computer.actions == [("game_action", ("move_up", 0.5))]
+    assert completions.requests[2]["messages"][-3] == {
+        "role": "tool",
+        "tool_call_id": "call-2",
+        "content": CUT_OFF_CALL,
+    }
 
 
 def test_game_tools_need_an_approach() -> None:

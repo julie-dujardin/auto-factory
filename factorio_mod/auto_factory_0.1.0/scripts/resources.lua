@@ -209,7 +209,7 @@ function resources.handlers.resources(params)
     end
   end
 
-  local origin = player.position
+  local origin = common.origin(player)
   local found = {}
   for _, cell in pairs(search.order) do
     if not cell.patch then

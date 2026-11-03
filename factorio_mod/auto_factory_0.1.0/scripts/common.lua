@@ -52,10 +52,16 @@ function common.get_player(params)
   return player
 end
 
--- Every position crossing the API is an offset from the player, so results can be
--- passed straight back as arguments.
+-- Every position crossing the API is an offset from the centre of the tile the player
+-- stands on, so results can be passed straight back as arguments and 1x1 or odd-sized
+-- entities sit at whole offsets.
+function common.origin(player)
+  local position = player.position
+  return {x = math.floor(position.x) + 0.5, y = math.floor(position.y) + 0.5}
+end
+
 function common.position_from(player, params)
-  local origin = player.position
+  local origin = common.origin(player)
   return {
     x = origin.x + common.required_number(params, "dx"),
     y = origin.y + common.required_number(params, "dy"),

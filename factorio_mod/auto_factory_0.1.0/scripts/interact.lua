@@ -84,7 +84,7 @@ local function obstruction(player, entity, position, direction)
     if other == player.character then
       character_there = true
     elseif #blockers < OBSTRUCTIONS_LISTED then
-      table.insert(blockers, other.name .. " at " .. common.offset_text(player.position, other.position))
+      table.insert(blockers, other.name .. " at " .. common.offset_text(common.origin(player), other.position))
     end
   end
   if #blockers > 0 then
@@ -172,7 +172,7 @@ local function place_one(player, cursor, item, entity, position, direction)
   if not player.can_build_from_cursor {position = position, direction = direction} then
     restore_cursor(player)
     local reason = obstruction(player, entity, position, direction)
-    return "the item cannot be built at " .. common.offset_text(player.position, position)
+    return "the item cannot be built at " .. common.offset_text(common.origin(player), position)
       .. (reason and ": " .. reason or "")
   end
   local before = held_count(player, cursor, item)
@@ -196,7 +196,7 @@ local function built_links(player, built)
   end
   local result = {}
   for _, entity in pairs(shown) do
-    table.insert(result, entities.links(entity, player.position))
+    table.insert(result, entities.links(entity, common.origin(player)))
   end
   return #result > 0 and result or nil
 end
@@ -214,7 +214,7 @@ function handlers.place(params)
   local entity = placed_entity(item)
   local width, height = layout.footprint(entity, direction)
   local start, requested = layout.start(player, params, width, height)
-  local stood = player.position
+  local stood = common.origin(player)
   -- Copies sit edge to edge.
   local spacing = height
   if line == defines.direction.east or line == defines.direction.west then
@@ -235,20 +235,21 @@ function handlers.place(params)
   if placed == 0 then
     common.fail(stopped)
   end
+  local origin = common.origin(player)
   local result = {
     placed = item,
     count = placed,
-    position = common.offset_from(player.position, start),
-    last = common.offset_from(player.position, line_position(start, line, spacing, placed - 1)),
+    position = common.offset_from(origin, start),
+    last = common.offset_from(origin, line_position(start, line, spacing, placed - 1)),
     direction = params.direction,
     stopped = stopped,
     built = built_links(player, built),
   }
   if requested and common.distance_squared(requested, start) >= SNAP_REPORTED ^ 2 then
-    result.snapped_from = common.offset_from(player.position, requested)
+    result.snapped_from = common.offset_from(origin, requested)
   end
-  if common.distance_squared(stood, player.position) > 0 then
-    result.stepped_aside = common.offset_from(stood, player.position)
+  if common.distance_squared(stood, origin) > 0 then
+    result.stepped_aside = common.offset_from(stood, origin)
   end
   return result
 end
@@ -288,7 +289,7 @@ function handlers.connect(params)
   local entity = placed_entity(item)
   local spots, count = connect_spots(item, entity, params)
   local cursor = empty_cursor(player)
-  local stood = player.position
+  local stood = common.origin(player)
   local built, first_reason = {}, nil
   for _, spot in ipairs(spots) do
     if #built == count then
@@ -308,8 +309,9 @@ function handlers.connect(params)
   if #built < count then
     result.stopped = "only " .. #built .. " of the " .. #spots .. " fitting spots worked; the best failed: " .. first_reason
   end
-  if common.distance_squared(stood, player.position) > 0 then
-    result.stepped_aside = common.offset_from(stood, player.position)
+  local origin = common.origin(player)
+  if common.distance_squared(stood, origin) > 0 then
+    result.stepped_aside = common.offset_from(stood, origin)
   end
   return result
 end
@@ -363,6 +365,8 @@ function handlers.drag_prepare(params)
   -- At zoom 1 the whole build reach is on screen.
   player.zoom = 1
   cursor.transfer_stack(source)
+  -- The harness maps these to screen pixels around the camera, which centres on the
+  -- player's exact position.
   return {
     start = common.offset_from(player.position, start),
     finish = common.offset_from(player.position, finish),
@@ -396,7 +400,7 @@ function handlers.drag_finish(params)
   return {
     item = drag.item,
     placed = placed,
-    finish = common.offset_from(player.position, drag.finish),
+    finish = common.offset_from(common.origin(player), drag.finish),
     stopped = drag.tiles < drag.requested and "the rest is outside build reach" or nil,
   }
 end
@@ -409,7 +413,7 @@ function handlers.rotate(params)
   end
   return {
     entity = name,
-    position = common.offset_from(player.position, entity.position),
+    position = common.offset_from(common.origin(player), entity.position),
     direction = common.DIRECTION_NAMES[entity.direction],
   }
 end
@@ -446,7 +450,7 @@ function handlers.set_recipe(params)
   end
   return {
     entity = name,
-    position = common.offset_from(player.position, entity.position),
+    position = common.offset_from(common.origin(player), entity.position),
     recipe = recipe,
     returned = returned,
   }

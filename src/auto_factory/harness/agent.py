@@ -22,9 +22,12 @@ SYSTEM_PROMPT = """You are controlling Factorio through observations and tools.
 Work toward the user's goal in deliberate steps. Inspect the newest observations
 before acting. Screenshot coordinates are normalized to [0, 1000] with the origin at
 top-left. Game positions in API arguments and results are dx/dy offsets in tiles from
-the player's current position (positive dx is east, positive dy is south), so they
-change whenever the player moves. Only player.world_position in api_scan is absolute;
-record locations in notes as world positions and subtract it to get offsets again.
+the centre of the tile the player stands on (positive dx is east, positive dy is
+south), so they change whenever the player moves to another tile. A 1x1 entity and the
+centre of an odd-sized one sit at whole offsets: a 3x3 machine at dx=1 dy=1 covers dx
+0 to 2 and dy 0 to 2. Only player.world_position in api_scan is absolute: it is the
+centre of that tile. Record locations in notes as world positions and subtract it to
+get offsets again.
 Entity ids from api_scan, api_find, api_place, and api_connect never change, so prefer
 them for entities you act on or build next to.
 Use game_action for known controls instead of reasoning about keyboard letters.
@@ -43,7 +46,9 @@ thier dimensions, and unlock state is unreliable; api_recipe is the source of tr
 items and their ingredients with api_recipe before planning, and again for every new
 item you plan to craft, smelt, or build. Likewise never guess an entity's size or
 where it takes and puts items and fluids: look it up with api_entity_info before
-laying out machines, inserters, belts, or pipes.
+laying out machines, inserters, belts, or pipes. Lookups are cheap and run together,
+so make them in bulk: in one turn, call api_recipe for every item involved and
+api_entity_info for every entity you may place, inserters and poles included.
 
 inserters insert from the direction you place them on (north -> pickup at north, output at south)
 
@@ -114,6 +119,10 @@ CUT_OFF_WARNING = {
     "a tool, and its thinking is lost. Think less per turn: record what you have "
     "decided with add_tasks, then work out one task at a time.",
 }
+CUT_OFF_CALL = (
+    "error: the output limit cut this call off while you wrote its arguments, so it "
+    "did not run; send it again with shorter arguments"
+)
 MAX_REPORTS = 10
 
 
@@ -293,7 +302,7 @@ class FactorioAgent:
             tool_calls, cut_off = self._complete(
                 f"step {step}", messages, self._tools, "required"
             )
-            if cut_off:
+            if cut_off and not tool_calls:
                 self._report(f"step {step}: output limit hit before a tool call")
                 messages.append(CUT_OFF_WARNING)
                 continue
@@ -305,6 +314,11 @@ class FactorioAgent:
             calls = iter(tool_calls)
             for call in calls:
                 name = call.function.name
+                # The server may still parse the unfinished last call, e.g. as {}.
+                if cut_off and call is tool_calls[-1]:
+                    self._report(f"step {step}: {name} cut off by the output limit")
+                    messages.append(tool_result(call, CUT_OFF_CALL))
+                    break
                 try:
                     arguments = json.loads(call.function.arguments)
                 except json.JSONDecodeError as exc:
@@ -363,7 +377,8 @@ class FactorioAgent:
         tools: list[dict[str, Any]],
         tool_choice: str,
     ) -> tuple[list[Any], bool]:
-        """Request one turn, append it to messages, and say if it was cut off."""
+        """Request one turn, append it to messages, and say if the output limit cut
+        it off."""
         parameters: dict[str, str | float] = {
             "tool_choice": tool_choice,
             "temperature": 0.8,
@@ -395,11 +410,13 @@ class FactorioAgent:
                 output=reply | thinking(message),
                 usage_details=usage_details(response),
             )
-            cut_off = not tool_calls and choice.finish_reason == "length"
+            cut_off = choice.finish_reason == "length"
             if cut_off:
                 generation.update(
                     level="WARNING",
-                    status_message="output limit before a tool call",
+                    status_message="output limit in the last tool call"
+                    if tool_calls
+                    else "output limit before a tool call",
                 )
         messages.append(reply)
         return tool_calls, cut_off

@@ -159,7 +159,7 @@ function entities.target(player, params)
   if #candidates > 0 then
     return common.nearest_first(candidates, position)[1]
   end
-  local requested = common.offset_text(player.position, position)
+  local requested = common.offset_text(common.origin(player), position)
   local nearby = common.nearest_first(
     surface.find_entities_filtered {position = position, radius = NEARBY_RADIUS, name = name},
     position
@@ -172,7 +172,7 @@ function entities.target(player, params)
   end
   local offsets = {}
   for index = 1, math.min(NEARBY_LISTED, #nearby) do
-    table.insert(offsets, common.offset_text(player.position, nearby[index].position))
+    table.insert(offsets, common.offset_text(common.origin(player), nearby[index].position))
   end
   common.fail("no " .. name .. " at " .. requested .. "; nearest: " .. table.concat(offsets, ", "))
 end
