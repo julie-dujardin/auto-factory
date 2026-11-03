@@ -1,6 +1,7 @@
 local common = require("scripts.common")
 local entities = require("scripts.entities")
 local ids = require("scripts.ids")
+local recipes = require("scripts.recipes")
 
 local handlers = {}
 
@@ -247,11 +248,52 @@ function handlers.rotate(params)
   }
 end
 
+function handlers.set_recipe(params)
+  local player = common.get_player(params)
+  local recipe = ids.check(common.required_string(params, "recipe"), "recipe")
+  local name, entity = reachable_entity(player, params)
+  if entity.type ~= "assembling-machine" then
+    common.fail(name .. " is a " .. entity.type .. "; only assembling machines take a recipe")
+  end
+  if entity.recipe_locked then
+    common.fail(name .. " has a fixed recipe")
+  end
+  if not recipes.runs_recipe(entity.prototype, prototypes.recipe[recipe]) then
+    common.fail(name .. " cannot craft " .. recipe .. "; api_recipe lists the machines that can")
+  end
+  if not player.force.recipes[recipe].enabled then
+    common.fail(recipe .. " is not unlocked; api_recipe lists the technology that unlocks it")
+  end
+  -- Ingredients of the previous recipe come out of the machine.
+  local returned = {}
+  local inventory = player.get_main_inventory()
+  for _, stack in pairs(entity.set_recipe(recipe)) do
+    local inserted = inventory.insert(stack)
+    if inserted < stack.count then
+      player.surface.spill_item_stack {
+        position = player.position,
+        stack = {name = stack.name, count = stack.count - inserted, quality = stack.quality},
+        enable_looted = true,
+      }
+    end
+    returned[stack.name] = (returned[stack.name] or 0) + stack.count
+  end
+  return {
+    entity = name,
+    position = common.offset_from(player.position, entity.position),
+    recipe = recipe,
+    returned = returned,
+  }
+end
+
 function handlers.insert(params)
   local player = common.get_player(params)
   local item = ids.check(common.required_string(params, "item"), "item")
   local count = math.max(1, math.floor(common.required_number(params, "count")))
   local name, entity = reachable_entity(player, params)
+  if entity.type == "assembling-machine" and not entity.get_recipe() then
+    common.fail(name .. " has no recipe, so it accepts no ingredients; use api_set_recipe")
+  end
   local inventory = player.get_main_inventory()
   local removed = inventory.remove {name = item, count = count}
   local inserted = entity.insert {name = item, count = removed}

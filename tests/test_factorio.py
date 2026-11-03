@@ -208,3 +208,18 @@ def test_search_forwards_query() -> None:
     )
     request = json.loads(raw.commands[0].removeprefix("/af "))
     assert request["method"] == "search"
+
+
+def test_set_recipe_forwards_target() -> None:
+    raw = FakeRcon({"entity": "assembling-machine-2", "recipe": "iron-gear-wheel"})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {
+        "entity": "assembling-machine-2",
+        "dx": 2.5,
+        "dy": 5,
+        "recipe": "iron-gear-wheel",
+    }
+
+    api.execute("api_set_recipe", arguments)
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert (request["method"], request["params"]) == ("set_recipe", arguments)

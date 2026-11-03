@@ -104,6 +104,7 @@ class RconFactorioAPI:
             "api_insert": "insert",
             "api_take": "take",
             "api_rotate": "rotate",
+            "api_set_recipe": "set_recipe",
             "api_research": "research",
             "api_recipe": "recipe",
             "api_search": "search",

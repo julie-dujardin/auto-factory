@@ -334,6 +334,22 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_set_recipe",
+        "Set the recipe of a reachable assembling machine, chemical plant, or oil "
+        "refinery; it accepts no ingredients until it has one. Furnaces pick their "
+        "recipe from their input. Ingredients of a previous recipe return to the "
+        "inventory.",
+        _object_schema(
+            {
+                "entity": {"type": "string"},
+                "dx": OFFSET,
+                "dy": OFFSET,
+                "recipe": {"type": "string"},
+            },
+            ["entity", "dx", "dy", "recipe"],
+        ),
+    ),
+    _tool(
         "api_wait",
         "Let the game run until a condition holds or seconds of game time pass. "
         "crafts: the entity finishes count more crafts. items: the entity holds at "
