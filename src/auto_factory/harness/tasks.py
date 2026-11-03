@@ -143,9 +143,9 @@ class TaskTree:
             if self.current.approach is None:
                 lines.append(
                     "It has no approach: inspect the game with api_scan and "
-                    "api_find, look up recipes and IDs with api_recipe and "
-                    "api_search, then call add_tasks or propose_approaches before "
-                    "using other game tools."
+                    "api_find, look up recipes, entities, and IDs with api_recipe, "
+                    "api_entity_info, and api_search, then call add_tasks or "
+                    "propose_approaches before using other game tools."
                 )
         return "\n".join(lines)
 

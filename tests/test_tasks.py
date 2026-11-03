@@ -85,7 +85,8 @@ def test_render_marks_current_and_collapses_closed_tasks() -> None:
             "[ ] 2. lab (done when: lab works)",
             "Current task: 1. fuel",
             "It has no approach: inspect the game with api_scan and api_find, "
-            "look up recipes and IDs with api_recipe and api_search, then call "
-            "add_tasks or propose_approaches before using other game tools.",
+            "look up recipes, entities, and IDs with api_recipe, api_entity_info, "
+            "and api_search, then call add_tasks or propose_approaches before using "
+            "other game tools.",
         ]
     )

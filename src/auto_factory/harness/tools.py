@@ -240,6 +240,27 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_entity_info",
+        "Look up an entity type in general, by entity or item name: its size in "
+        "tiles, power use or output, speeds, and where items and fluids go in and out. "
+        "Offsets are tiles from the entity's centre, the point api_place puts at dx/dy. "
+        "items says how inserters reach its inventory: any_side, fuel_any_side, or "
+        "none. When facing matters, by_direction lists per facing: inserter pickup "
+        "and drop tiles, a drill's item_out tile, which way a belt's items_move, fluid "
+        "connections with the outside tile a pipe connects on, and size where "
+        "rotation swaps it. directional false means facing changes none of these; "
+        "fluids_only means it changes only the fluid connections.",
+        _object_schema(
+            {
+                "entity": {
+                    "type": "string",
+                    "description": "Exact entity or item name, e.g. burner-mining-drill.",
+                }
+            },
+            ["entity"],
+        ),
+    ),
+    _tool(
         "api_search",
         "Find exact IDs from words or a partial or misspelled name. Returns the "
         "closest IDs per kind, best first: items, fluids, recipes, entities, "
@@ -506,7 +527,13 @@ TASK_TOOLS = [
 ]
 TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
 # Read-only lookups that inform planning, so they run before the task has an approach.
-LOOKUP_TOOL_NAMES = {"api_scan", "api_find", "api_recipe", "api_search"}
+LOOKUP_TOOL_NAMES = {
+    "api_scan",
+    "api_find",
+    "api_recipe",
+    "api_entity_info",
+    "api_search",
+}
 
 
 def tools_for(desktop: bool, api: bool) -> list[dict[str, Any]]:

@@ -183,4 +183,4 @@ function handlers.recipe(params)
   return {item = name, recipes = recipes, mining = mining}
 end
 
-return {handlers = handlers, runs_recipe = runs_recipe}
+return {handlers = handlers, power_needs = power_needs, runs_recipe = runs_recipe}

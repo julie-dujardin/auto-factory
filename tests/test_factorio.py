@@ -219,6 +219,19 @@ def test_recipe_forwards_item() -> None:
     assert request == {"id": 1, "method": "recipe", "params": {"item": "iron-plate"}}
 
 
+def test_entity_info_forwards_entity() -> None:
+    raw = FakeRcon({"entity": "inserter", "directional": True})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    api.execute("api_entity_info", {"entity": "inserter"})
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert request == {
+        "id": 1,
+        "method": "entity_info",
+        "params": {"entity": "inserter"},
+    }
+
+
 def test_search_forwards_query() -> None:
     raw = FakeRcon({"item": ["iron-gear-wheel"]})
     api = RconFactorioAPI("localhost", 27015, "secret", client=raw)

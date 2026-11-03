@@ -110,6 +110,7 @@ class RconFactorioAPI:
             "api_set_recipe": "set_recipe",
             "api_research": "research",
             "api_recipe": "recipe",
+            "api_entity_info": "entity_info",
             "api_search": "search",
         }
         try:
