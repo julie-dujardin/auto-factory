@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from langfuse import get_client
 
@@ -120,6 +120,14 @@ CUT_OFF_CALL = (
     "did not run; send it again with shorter arguments"
 )
 MAX_REPORTS = 10
+
+ReasoningEffort = Literal["low", "medium", "xhigh"]
+# holo4-27b's levels, lowest first; other Holo models accept and ignore them.
+REASONING_EFFORTS: tuple[ReasoningEffort, ...] = ("low", "medium", "xhigh")
+
+
+def lower_effort(effort: ReasoningEffort) -> ReasoningEffort:
+    return REASONING_EFFORTS[max(0, REASONING_EFFORTS.index(effort) - 1)]
 
 
 def look_back_prompt(outcome: str, reports: list[str]) -> dict[str, str]:
@@ -238,6 +246,7 @@ class FactorioAgent:
         control: ControlMode = "computer",
         observation_radius: float = 12,
         max_steps: int = 100,
+        reasoning_effort: ReasoningEffort = "medium",
         report: Callable[[str], None] = print,
         screen: Screen | None = None,
     ) -> None:
@@ -259,6 +268,7 @@ class FactorioAgent:
         )
         self._observation_radius = observation_radius
         self._max_steps = max_steps
+        self._reasoning_effort = reasoning_effort
         self._report = report
         self._tools = tools_for(desktop=computer is not None, api=factorio is not None)
 
@@ -283,6 +293,8 @@ class FactorioAgent:
         starts: dict[Task, int] = {}
         # The latest other call, attached to feedback as evidence.
         last_call: dict[str, Any] | None = None
+        # A turn cut off while thinking is retried one level lower, until one acts.
+        effort = self._reasoning_effort
 
         for step in range(1, self._max_steps + 1):
             starts.setdefault(tasks.current, len(messages))
@@ -296,15 +308,20 @@ class FactorioAgent:
             trim_game_states(messages)
             trim_tasks(messages)
             tool_calls, cut_off = self._complete(
-                f"step {step}", messages, self._tools, "required"
+                f"step {step}", messages, self._tools, "required", effort
             )
             if cut_off and not tool_calls:
-                self._report(f"step {step}: output limit hit before a tool call")
+                effort = lower_effort(effort)
+                self._report(
+                    f"step {step}: output limit hit before a tool call; "
+                    f"retrying at {effort} reasoning effort"
+                )
                 messages.append(CUT_OFF_WARNING)
                 continue
             if not tool_calls:
                 self._report(f"step {step}: model returned no tool call")
                 continue
+            effort = self._reasoning_effort
 
             cut: int | None = None
             calls = iter(tool_calls)
@@ -372,12 +389,14 @@ class FactorioAgent:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         tool_choice: str,
+        reasoning_effort: ReasoningEffort,
     ) -> tuple[list[Any], bool]:
         """Request one turn, append it to messages, and say if the output limit cut
         it off."""
         parameters: dict[str, str | float] = {
             "tool_choice": tool_choice,
             "temperature": 0.8,
+            "reasoning_effort": reasoning_effort,
         }
         with get_client().start_as_current_observation(
             as_type="generation",
@@ -444,7 +463,9 @@ class FactorioAgent:
         trim_tasks(messages)
         messages.append(look_back_prompt(outcome, reports))
         tools = [tool for tool in self._tools if tool["function"]["name"] == "feedback"]
-        tool_calls, _ = self._complete("look back", messages, tools, "auto")
+        tool_calls, _ = self._complete(
+            "look back", messages, tools, "auto", self._reasoning_effort
+        )
         for call in tool_calls:
             try:
                 arguments = json.loads(call.function.arguments)

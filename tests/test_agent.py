@@ -166,6 +166,30 @@ def test_cut_off_turn_warns_to_think_less() -> None:
     assert len(warnings) == 1
 
 
+def test_cut_off_turn_retries_one_effort_lower_until_one_acts() -> None:
+    completions = FakeCompletions(
+        [
+            [],
+            [],
+            [],
+            FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+    agent = FactorioAgent(
+        completions.create,
+        FakeComputer(),
+        "test-model",
+        reasoning_effort="xhigh",
+        report=lambda _: None,
+    )
+
+    agent.run("move")
+
+    efforts = [request["reasoning_effort"] for request in completions.requests]
+    assert efforts == ["xhigh", "medium", "low", "low", "xhigh", "xhigh"]
+
+
 def test_call_cut_off_by_output_limit_does_not_run() -> None:
     completions = FakeCompletions(
         [

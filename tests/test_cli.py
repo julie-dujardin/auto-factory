@@ -85,3 +85,11 @@ def test_macos_mixed_watches_the_window(monkeypatch) -> None:
 
     assert built["computer"] is None
     assert built["screen"] == "window"
+
+
+def test_reasoning_effort_defaults_to_medium() -> None:
+    assert cli.parser().parse_args(["x"]).reasoning_effort == "medium"
+    assert (
+        cli.parser().parse_args(["--reasoning-effort", "low", "x"]).reasoning_effort
+        == "low"
+    )

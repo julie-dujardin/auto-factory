@@ -11,7 +11,7 @@ from openai import OpenAI
 
 from ..control.computer import Computer, DesktopComputer, Screen, WindowScreen
 from ..control.factorio import FactorioAPI, RconFactorioAPI, rcon_environment
-from .agent import FactorioAgent
+from .agent import REASONING_EFFORTS, FactorioAgent
 from .tools import ControlMode
 
 
@@ -33,6 +33,12 @@ def parser() -> argparse.ArgumentParser:
         help="World radius included in API observations",
     )
     result.add_argument("--max-steps", type=int, default=100)
+    result.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORTS,
+        default="medium",
+        help="Thinking per turn; a turn cut off while thinking retries one lower",
+    )
     result.add_argument(
         "--check-api",
         action="store_true",
@@ -111,6 +117,7 @@ def main() -> None:
         control=control,
         observation_radius=args.observation_radius,
         max_steps=args.max_steps,
+        reasoning_effort=args.reasoning_effort,
         screen=screen,
     )
 
