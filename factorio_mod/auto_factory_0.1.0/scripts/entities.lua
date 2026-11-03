@@ -215,13 +215,44 @@ local function network_id(pole, networks)
   return id
 end
 
+local function area_from(origin, area)
+  return {
+    left_top = common.offset_from(origin, area.left_top),
+    right_bottom = common.offset_from(origin, area.right_bottom),
+  }
+end
+
 local function supply_area(pole, origin)
   local reach = pole.prototype.get_supply_area_distance(pole.quality)
   local position = pole.position
-  return {
-    left_top = common.offset_from(origin, {x = position.x - reach, y = position.y - reach}),
-    right_bottom = common.offset_from(origin, {x = position.x + reach, y = position.y + reach}),
-  }
+  return area_from(origin, {
+    left_top = {x = position.x - reach, y = position.y - reach},
+    right_bottom = {x = position.x + reach, y = position.y + reach},
+  })
+end
+
+-- Amount left per resource the drill can mine in its area; infinite resources such as
+-- crude oil give their yield instead, as api_resources does.
+local function mined_resources(drill)
+  local categories = drill.prototype.resource_categories
+  local amounts = {}
+  local normal_amounts = {}
+  for _, resource in pairs(drill.surface.find_entities_filtered {
+    area = drill.mining_area,
+    type = "resource",
+  }) do
+    local prototype = resource.prototype
+    if categories[prototype.resource_category] then
+      amounts[resource.name] = (amounts[resource.name] or 0) + resource.amount
+      if prototype.infinite_resource then
+        normal_amounts[resource.name] = prototype.normal_resource_amount
+      end
+    end
+  end
+  for name, normal in pairs(normal_amounts) do
+    amounts[name] = {yield_percent = math.floor(amounts[name] / normal * 100 + 0.5)}
+  end
+  return amounts
 end
 
 -- Collects the electric networks of listed poles into networks.
@@ -248,6 +279,10 @@ function entities.entry(entity, origin, networks)
   if entity.type == "electric-pole" then
     entry.supply_area = supply_area(entity, origin)
     entry.network = network_id(entity, networks)
+  end
+  if entity.type == "mining-drill" then
+    entry.mining_area = area_from(origin, entity.mining_area)
+    entry.mines = mined_resources(entity)
   end
   if entity.health then
     entry.health = common.rounded(entity.health)

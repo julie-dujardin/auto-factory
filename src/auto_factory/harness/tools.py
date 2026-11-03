@@ -175,7 +175,9 @@ API_TOOLS = [
         "network: the id of the electric network they are wired into. power_networks "
         "lists each network of the listed poles once with available_kw that its "
         "generators can supply and demand_kw that its machines draw; poles with "
-        "different ids share no power.",
+        "different ids share no power. Mining drills give mining_area: the corners of "
+        "the area they mine, and mines: the amount left in it per resource they can "
+        "mine, or yield_percent for infinite ones such as crude oil.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],
