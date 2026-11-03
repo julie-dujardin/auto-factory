@@ -67,17 +67,18 @@ local function most_common(counts)
       best, best_count = name, count
     end
   end
-  return best
+  return best, best_count
 end
 
--- Each lane's most common item and, when measured against a recent sample, its flow in
--- items/s: the density of items that moved since that sample times the belt speed.
+-- Each lane's most common item, its count and, when measured against a recent sample,
+-- its flow in items/s: the density of items that moved since that sample times the belt
+-- speed.
 local function lanes(sides, items_per_second)
   local result = {}
   for side, key in ipairs({"left", "right"}) do
-    local item = most_common(sides[side].counts)
+    local item, count = most_common(sides[side].counts)
     if item then
-      result[key] = {item = item}
+      result[key] = {item = item, count = count}
       if sides[side].moving and sides[side].length > 0 then
         result[key].per_second = common.rounded(
           sides[side].moving / sides[side].length * items_per_second
