@@ -14,10 +14,17 @@ BELT_SAMPLED_METHODS = {"observe", "find"}
 BELT_SAMPLE_SECONDS = 0.1
 # Factorio encodes an empty Lua table as {}, so array fields need restoring by name.
 LIST_FIELDS: dict[str, list[tuple[str, ...]]] = {
-    "observe": [("entities",), ("research", "queue"), ("research", "available")],
+    "observe": [("entities",), ("research", "queue")],
     "find": [("entities",)],
     "resources": [("patches",)],
-    "research": [("queue",), ("available",)],
+    "research": [("queue",)],
+    "technology": [
+        ("unlocks_recipes",),
+        ("effects",),
+        ("prerequisites",),
+        ("missing_prerequisites",),
+        ("successors",),
+    ],
 }
 
 
@@ -115,6 +122,7 @@ class RconFactorioAPI:
             "api_recipe": "recipe",
             "api_entity_info": "entity_info",
             "api_search": "search",
+            "api_technology": "technology",
         }
         try:
             method = methods[name]

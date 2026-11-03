@@ -210,7 +210,7 @@ def test_empty_lua_arrays_become_lists() -> None:
     assert api.observe(8) == {
         "entities": [],
         "resources": {},
-        "research": {"queue": [], "available": [], "triggers": {}},
+        "research": {"queue": [], "available": {}, "triggers": {}},
     }
 
 
@@ -257,6 +257,35 @@ def test_search_forwards_query() -> None:
     )
     request = json.loads(raw.commands[0].removeprefix("/af "))
     assert request["method"] == "search"
+
+
+def test_technology_restores_empty_lists() -> None:
+    raw = FakeRcon(
+        {
+            "technology": "automation",
+            "unlocks_recipes": {},
+            "effects": {},
+            "prerequisites": {},
+            "missing_prerequisites": {},
+            "successors": {},
+        }
+    )
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    result = json.loads(api.execute("api_technology", {"technology": "automation"}))
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert (request["method"], request["params"]) == (
+        "technology",
+        {"technology": "automation"},
+    )
+    assert result == {
+        "technology": "automation",
+        "unlocks_recipes": [],
+        "effects": [],
+        "prerequisites": [],
+        "missing_prerequisites": [],
+        "successors": [],
+    }
 
 
 def test_set_recipe_forwards_target() -> None:

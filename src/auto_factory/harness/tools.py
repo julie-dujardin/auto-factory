@@ -185,7 +185,13 @@ API_TOOLS = [
         "filter give filter_mode: whitelist moves only the items in filters, blacklist "
         "all others; and stack_size_override when set. Splitters give input_priority "
         "and output_priority: left, right, or none, seen facing their direction; and "
-        "filter: the item sent out the output_priority side and the rest out the other.",
+        "filter: the item sent out the output_priority side and the rest out the other. "
+        "research gives the current technology and its progress fraction, the queue, "
+        "last_researched, available: each lab technology whose prerequisites are "
+        "researched with its cost of units, science packs per unit, and seconds per "
+        "unit, and progress when partly researched; triggers: technologies that "
+        "complete on an action instead, with what it needs; and bonuses: research "
+        "bonuses in effect.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],
@@ -284,7 +290,8 @@ API_TOOLS = [
         "source, and whether you can already craft that machine. locked lists "
         "recipes not yet researched with the technologies that unlock them; "
         "include_locked gives them in full, marked unlocked false with unlocked_by. "
-        "Rates ignore modules, beacons, and research bonuses.",
+        "Rates ignore modules, beacons, and research bonuses; api_scan lists the "
+        "bonuses.",
         _object_schema(
             {
                 "item": {
@@ -344,6 +351,23 @@ API_TOOLS = [
                 },
             },
             ["query", "kind"],
+        ),
+    ),
+    _tool(
+        "api_technology",
+        "Look up a technology: status (researched, researching, queued, available, "
+        "locked, or disabled), cost or trigger, progress, the recipes it unlocks and "
+        "its other effects, its direct prerequisites, missing_prerequisites: every "
+        "unresearched technology it needs, each after its own prerequisites; and "
+        "successors: the technologies it leads to.",
+        _object_schema(
+            {
+                "technology": {
+                    "type": "string",
+                    "description": "Exact technology name, e.g. automation-2.",
+                }
+            },
+            ["technology"],
         ),
     ),
     _tool(
@@ -564,7 +588,8 @@ API_TOOLS = [
     ),
     _tool(
         "api_research",
-        "Queue a lab technology for research. The scan lists which are available.",
+        "Queue a lab technology for research. The scan lists which are available; "
+        "api_technology says what a locked one needs first.",
         _object_schema(
             {"technology": {"type": "string"}},
             ["technology"],
@@ -681,6 +706,7 @@ LOOKUP_TOOL_NAMES = {
     "api_recipe",
     "api_entity_info",
     "api_search",
+    "api_technology",
 }
 
 
