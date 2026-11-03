@@ -203,6 +203,29 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_resources",
+        "Find resource patches anywhere on the charted map, nearest first: ores, "
+        "crude oil, and water named by the fluid offshore pumps draw from it. Tiles "
+        "of one resource lying close together form a patch, as on the map; partial "
+        "means it reaches uncharted land, so it may continue and its totals may be "
+        "lower bounds. Each patch gives distance and "
+        "nearest: the offset of its closest tile. Ores give amount, tiles, and area: "
+        "the left_top and right_bottom corners of the patch; infinite resources such "
+        "as crude oil give yield_percent summed over their wells instead of amount. "
+        "Water gives coastline: its count of shore tiles.",
+        _object_schema(
+            {
+                "name": {
+                    "type": "string",
+                    "description": "Substring of the resource name, e.g. iron-ore, "
+                    "ore, crude-oil, or water. Empty matches all.",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            ["name", "limit"],
+        ),
+    ),
+    _tool(
         "api_walk_to",
         "Walk by an offset in tiles using normal character movement and collision. "
         "Returns whether the player arrived or got blocked, how far it moved, and the "
@@ -540,6 +563,7 @@ TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
 LOOKUP_TOOL_NAMES = {
     "api_scan",
     "api_find",
+    "api_resources",
     "api_recipe",
     "api_entity_info",
     "api_search",

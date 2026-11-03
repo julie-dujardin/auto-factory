@@ -165,6 +165,18 @@ def test_find_forwards_filters() -> None:
     assert request == {"id": 1, "method": "find", "params": arguments}
 
 
+def test_resources_forwards_filters_and_restores_patches() -> None:
+    raw = FakeRcon({"patches": {}, "omitted": 0})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {"name": "water", "limit": 5}
+
+    result = api.execute("api_resources", arguments)
+
+    assert json.loads(result) == {"patches": [], "omitted": 0}
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert request == {"id": 1, "method": "resources", "params": arguments}
+
+
 def test_wait_polls_until_done_then_stops() -> None:
     raw = FakeRcon({"done": True, "reason": "condition met"})
     api = RconFactorioAPI("localhost", 27015, "secret", client=raw)

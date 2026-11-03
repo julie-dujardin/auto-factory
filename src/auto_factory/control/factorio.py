@@ -16,6 +16,7 @@ BELT_SAMPLE_SECONDS = 0.1
 LIST_FIELDS: dict[str, list[tuple[str, ...]]] = {
     "observe": [("entities",), ("research", "queue"), ("research", "available")],
     "find": [("entities",)],
+    "resources": [("patches",)],
     "research": [("queue",), ("available",)],
 }
 
@@ -99,6 +100,7 @@ class RconFactorioAPI:
 
         methods = {
             "api_find": "find",
+            "api_resources": "resources",
             "api_wait": "wait",
             "api_walk_to": "walk_to",
             "api_mine": "mine",

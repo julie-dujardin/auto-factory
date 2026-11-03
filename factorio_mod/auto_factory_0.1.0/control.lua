@@ -5,11 +5,12 @@ local interact = require("scripts.interact")
 local observe = require("scripts.observe")
 local recipes = require("scripts.recipes")
 local research = require("scripts.research")
+local resources = require("scripts.resources")
 
 local RESPONSE_PREFIX = "__AUTO_FACTORY__"
 
 local handlers = {}
-for _, module in pairs {actions, ids, info, interact, observe, recipes, research} do
+for _, module in pairs {actions, ids, info, interact, observe, recipes, research, resources} do
   for name, handler in pairs(module.handlers) do
     assert(not handlers[name], "duplicate API method " .. name)
     handlers[name] = handler
