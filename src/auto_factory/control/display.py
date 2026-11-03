@@ -10,14 +10,26 @@ import tempfile
 import time
 from pathlib import Path
 
-FLATPAK_ROOT = Path.home() / ".var/app/com.valvesoftware.Steam"
+_FLATPAK_ROOT = Path.home() / ".var/app/com.valvesoftware.Steam"
+
+# Factorio user-data directories (saves, mods, config), most common first.
+FACTORIO_DATA_DIRS: tuple[Path, ...] = (
+    Path.home() / ".factorio",  # native install (Steam, AUR, zip)
+    _FLATPAK_ROOT / ".factorio",  # Flatpak Steam
+)
+
+# Factorio binaries, in search order.
+FACTORIO_BINARIES: tuple[Path, ...] = (
+    Path.home() / ".steam/steam/steamapps/common/Factorio/bin/x64/factorio",
+    Path.home() / ".local/share/Steam/steamapps/common/Factorio/bin/x64/factorio",
+    _FLATPAK_ROOT / ".local/share/Steam/steamapps/common/Factorio/bin/x64/factorio",
+)
 
 
 def find_factorio() -> Path:
     candidates = [
         Path(os.environ["FACTORIO_BIN"]) if "FACTORIO_BIN" in os.environ else None,
-        FLATPAK_ROOT / ".local/share/Steam/steamapps/common/Factorio/bin/x64/factorio",
-        Path.home() / ".steam/steam/steamapps/common/Factorio/bin/x64/factorio",
+        *FACTORIO_BINARIES,
     ]
     for candidate in candidates:
         if candidate is not None and candidate.is_file():
@@ -26,21 +38,22 @@ def find_factorio() -> Path:
 
 
 def nested_config(directory: Path) -> Path | None:
-    source = FLATPAK_ROOT / ".factorio/config/config.ini"
-    if not source.is_file():
-        return None
+    for data_dir in FACTORIO_DATA_DIRS:
+        source = data_dir / "config/config.ini"
+        if not source.is_file():
+            continue
 
-    contents = source.read_text()
-    write_data = FLATPAK_ROOT / ".factorio"
-    contents = re.sub(
-        r"(?m)^write-data=.*$",
-        f"write-data={write_data}",
-        contents,
-        count=1,
-    )
-    destination = directory / "config.ini"
-    destination.write_text(contents)
-    return destination
+        contents = source.read_text()
+        contents = re.sub(
+            r"(?m)^write-data=.*$",
+            f"write-data={data_dir}",
+            contents,
+            count=1,
+        )
+        destination = directory / "config.ini"
+        destination.write_text(contents)
+        return destination
+    return None
 
 
 def wait_for_display(process: subprocess.Popen, display: str) -> None:

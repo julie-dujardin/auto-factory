@@ -11,9 +11,9 @@ def test_find_factorio_uses_environment(tmp_path: Path, monkeypatch) -> None:
     assert display.find_factorio() == binary
 
 
-def test_nested_config_reuses_flatpak_data(tmp_path: Path, monkeypatch) -> None:
-    flatpak_root = tmp_path / "steam"
-    config_directory = flatpak_root / ".factorio/config"
+def test_nested_config_reuses_existing_data(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / ".factorio"
+    config_directory = data_dir / "config"
     config_directory.mkdir(parents=True)
     (config_directory / "config.ini").write_text(
         "[path]\nread-data=__PATH__system-read-data__\n"
@@ -21,12 +21,12 @@ def test_nested_config_reuses_flatpak_data(tmp_path: Path, monkeypatch) -> None:
     )
     output_directory = tmp_path / "output"
     output_directory.mkdir()
-    monkeypatch.setattr(display, "FLATPAK_ROOT", flatpak_root)
+    monkeypatch.setattr(display, "FACTORIO_DATA_DIRS", (data_dir,))
 
     result = display.nested_config(output_directory)
 
     assert result is not None
-    assert f"write-data={flatpak_root / '.factorio'}" in result.read_text()
+    assert f"write-data={data_dir}" in result.read_text()
 
 
 def test_display_socket_uses_display_number() -> None:
