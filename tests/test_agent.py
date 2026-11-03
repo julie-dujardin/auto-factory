@@ -111,6 +111,10 @@ class FakeFactorio:
 
 
 APPROACHES = '{"approaches":["a","b"],"reason":"a is best"}'
+FIND = (
+    '{"name":"ore","type":"resource","status":"","radius":32,"sort":"distance",'
+    '"limit":5}'
+)
 
 
 def computer_agent(
@@ -156,9 +160,11 @@ def test_lookups_need_no_approach() -> None:
     completions = FakeCompletions(
         [
             [
-                FakeCall("api_search", '{"query":"gear","kind":"item"}'),
-                FakeCall("api_recipe", '{"item":"iron-gear-wheel"}', "c2"),
-                FakeCall("api_craft", '{"recipe":"iron-gear-wheel","count":1}', "c3"),
+                FakeCall("api_scan", '{"radius":8}'),
+                FakeCall("api_find", FIND, "c2"),
+                FakeCall("api_search", '{"query":"gear","kind":"item"}', "c3"),
+                FakeCall("api_recipe", '{"item":"iron-gear-wheel"}', "c4"),
+                FakeCall("api_craft", '{"recipe":"iron-gear-wheel","count":1}', "c5"),
             ],
             FakeCall("fail_task", '{"reason":"gave up"}'),
         ]
@@ -175,6 +181,8 @@ def test_lookups_need_no_approach() -> None:
 
     assert agent.run("craft") == "Failed: gave up"
     assert factorio.actions == [
+        ("api_scan", {"radius": 8}),
+        ("api_find", json.loads(FIND)),
         ("api_search", {"query": "gear", "kind": "item"}),
         ("api_recipe", {"item": "iron-gear-wheel"}),
     ]

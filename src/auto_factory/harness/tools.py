@@ -502,7 +502,7 @@ TASK_TOOLS = [
 ]
 TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
 # Read-only lookups that inform planning, so they run before the task has an approach.
-LOOKUP_TOOL_NAMES = {"api_recipe", "api_search"}
+LOOKUP_TOOL_NAMES = {"api_scan", "api_find", "api_recipe", "api_search"}
 
 
 def tools_for(desktop: bool, api: bool) -> list[dict[str, Any]]:

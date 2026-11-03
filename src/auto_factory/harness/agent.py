@@ -44,8 +44,8 @@ Never guess an ID either. When unsure of the exact name of an item, fluid, recip
 entity, entity type, technology, or entity status, find it with api_search. An error
 for an unknown ID lists similar IDs: pick from them or search, never retry a variant.
 
-api_recipe and api_search work at any time, even before the current task has an
-approach.
+api_scan, api_find, api_recipe, and api_search only read, so they work at any time,
+even before the current task has an approach.
 
 Plan with the task tools before acting. Split the goal into ordered tasks with
 add_tasks. For the current task, either split it further or, once it is concrete, call
