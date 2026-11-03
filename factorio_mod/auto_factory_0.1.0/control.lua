@@ -68,17 +68,23 @@ local function ensure_storage()
 end
 
 -- Night darkens screenshots without adding anything the agent should plan around.
+-- A frozen noon is used because always_day leaves 2.1 dark.
+local function make_day(surface)
+  surface.daytime = 0
+  surface.freeze_daytime = true
+end
+
 local function ensure_world()
   ensure_storage()
   for _, surface in pairs(game.surfaces) do
-    surface.always_day = true
+    make_day(surface)
   end
 end
 
 script.on_init(ensure_world)
 script.on_configuration_changed(ensure_world)
 script.on_event(defines.events.on_surface_created, function(event)
-  game.surfaces[event.surface_index].always_day = true
+  make_day(game.surfaces[event.surface_index])
 end)
 
 local function fail(message)
@@ -389,7 +395,11 @@ local function research_state(force)
   end
   local available = {}
   local triggers = {}
+  local researched = 0
   for name, technology in pairs(force.technologies) do
+    if technology.researched then
+      researched = researched + 1
+    end
     if technology.enabled and not technology.researched then
       local ready = true
       for _, prerequisite in pairs(technology.prerequisites) do
@@ -421,6 +431,7 @@ local function research_state(force)
     queue = queue,
     available = available,
     triggers = triggers,
+    researched = researched,
   }
 end
 

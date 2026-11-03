@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from typing import Any
 
 from langfuse import get_client, propagate_attributes
 from openai import OpenAI
@@ -53,6 +54,19 @@ def rcon_from_environment() -> RconFactorioAPI:
         port=port,
         password=password,
     )
+
+
+def researched_count(factorio: FactorioAPI) -> int:
+    return int(factorio.observe(2)["research"]["researched"])
+
+
+def score_research(episode: Any, factorio: FactorioAPI, start: int) -> None:
+    try:
+        completed = researched_count(factorio) - start
+    except (RuntimeError, ValueError) as exc:
+        print(f"Could not score research: {exc}", file=sys.stderr)
+        return
+    episode.score_trace(name="research_completed", value=completed, data_type="NUMERIC")
 
 
 def main() -> None:
@@ -110,11 +124,15 @@ def main() -> None:
     ):
         if url := langfuse.get_trace_url():
             print(f"Trace: {url}", flush=True)
+        research_start = researched_count(factorio) if factorio else None
         try:
             answer = agent.run(args.task)
         except KeyboardInterrupt:
             episode.update(level="WARNING", status_message="stopped by user")
             print("\nStopped.", file=sys.stderr)
             raise SystemExit(130) from None
+        finally:
+            if factorio and research_start is not None:
+                score_research(episode, factorio, research_start)
         episode.update(output=answer)
         print(answer)
