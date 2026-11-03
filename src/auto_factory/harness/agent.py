@@ -24,13 +24,10 @@ Use click with the right button and a hold duration to mine resources or entitie
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
 The player can build and interact with entities up to 10 tiles away, but must be
 within about 2.7 tiles of a resource tile to mine it; walk closer before acting.
-Chain several tool calls in one turn when each follows from the last, e.g. walk next
-to ore then mine it. They run in order; the chain stops after an error, a blocked walk,
-a partial placement, complete_task, or fail_task, and skips the calls after it.
-Use the next observations to verify the chain's effect.
 Research of type "trigger" completes automatically when the required action occurs
 (producing items, etc), without needing to be queued.
-Avoid minimal actions: prefer using machines rather than performing manual actions like mining.
+
+Avoid manual actions: prefer using machines rather than performing manual actions like mining.
 
 Plan with the task tools before acting. Split the goal into ordered tasks with
 add_tasks. For the current task, either split it further or, once it is concrete, call
@@ -40,6 +37,12 @@ complete_task when its done_when holds, recording the locations and facts later 
 need: a closed task's steps are removed from your context. Call fail_task when an
 approach does not work, saying what you learned. Completing or failing the goal ends
 the run.
+
+Every turn is slow: return every tool call you can already decide in one turn, e.g.
+one api_take per full furnace in reach, or api_walk_to then api_place. They run in
+order; the chain stops after an error, a blocked walk, a partial placement,
+complete_task, or fail_task, and skips the calls after it. Use the next observations
+to verify the chain's effect.
 """
 
 
