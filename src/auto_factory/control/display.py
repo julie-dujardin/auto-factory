@@ -207,9 +207,10 @@ def main() -> None:
                     factorio,
                     config,
                     os.environ.copy(),
-                    "macOS has no isolated display, so only API control works. "
-                    "Host a multiplayer game, then in another terminal run:\n"
-                    "  uv run auto-factory --control api 'your task'",
+                    "macOS has no isolated display, so the agent acts through the "
+                    "API and only watches this window. Start a game, then in "
+                    "another terminal run:\n"
+                    "  uv run auto-factory --control mixed 'your task'",
                 )
             else:
                 code = run_isolated(factorio, config)

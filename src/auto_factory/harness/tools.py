@@ -446,13 +446,13 @@ TASK_TOOLS = [
 TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
 
 
-def tools_for_mode(mode: ControlMode) -> list[dict[str, Any]]:
+def tools_for(desktop: bool, api: bool) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
-    if mode in {"computer", "mixed"}:
+    if desktop:
         selected.extend(DESKTOP_TOOLS)
-    if mode in {"api", "mixed"}:
+    if api:
         selected.extend(API_TOOLS)
-    if mode == "mixed":
+    if desktop and api:
         selected.extend(MIXED_TOOLS)
     selected.extend(TASK_TOOLS)
     return selected

@@ -7,10 +7,10 @@ from typing import Any
 
 from langfuse import get_client
 
-from ..control.computer import Computer, Screenshot
+from ..control.computer import Computer, Screen, Screenshot
 from ..control.factorio import FactorioAPI
 from .tasks import Task, TaskTree
-from .tools import TASK_TOOL_NAMES, ControlMode, execute_tool, tools_for_mode
+from .tools import TASK_TOOL_NAMES, ControlMode, execute_tool, tools_for
 
 SYSTEM_PROMPT = """You are controlling Factorio through observations and tools.
 Work toward the user's goal in deliberate steps. Inspect the newest observations
@@ -48,6 +48,10 @@ MODE_PROMPTS: dict[ControlMode, str] = {
     "api": "Use structured game state and API tools; no screenshot is available.",
     "mixed": "Use either desktop or API tools, choosing the most reliable option per step.",
 }
+# Mixed control on macOS, where only the window can be captured.
+SCREEN_ONLY_PROMPT = (
+    "Use the screenshot and structured game state to see, and API tools to act."
+)
 
 
 def observation(screenshot: Screenshot) -> dict[str, Any]:
@@ -155,26 +159,34 @@ class FactorioAgent:
         observation_radius: float = 12,
         max_steps: int = 100,
         report: Callable[[str], None] = print,
+        screen: Screen | None = None,
     ) -> None:
-        if control in {"computer", "mixed"} and computer is None:
-            raise ValueError(f"{control} mode requires computer control")
+        if control == "computer" and computer is None:
+            raise ValueError("computer mode requires computer control")
         if control in {"api", "mixed"} and factorio is None:
             raise ValueError(f"{control} mode requires Factorio API control")
+        self._screen = computer if screen is None else screen
+        if control == "mixed" and self._screen is None:
+            raise ValueError("mixed mode requires screenshots")
         self._create_completion = create_completion
         self._computer = computer
         self._factorio = factorio
         self._model = model
-        self._control = control
+        self._mode_prompt = (
+            SCREEN_ONLY_PROMPT
+            if control == "mixed" and computer is None
+            else MODE_PROMPTS[control]
+        )
         self._observation_radius = observation_radius
         self._max_steps = max_steps
         self._report = report
-        self._tools = tools_for_mode(control)
+        self._tools = tools_for(desktop=computer is not None, api=factorio is not None)
 
     def run(self, task: str) -> str:
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT + "\n" + MODE_PROMPTS[self._control],
+                "content": SYSTEM_PROMPT + "\n" + self._mode_prompt,
             },
             {"role": "user", "content": task},
         ]
@@ -184,8 +196,8 @@ class FactorioAgent:
 
         for step in range(1, self._max_steps + 1):
             starts.setdefault(tasks.current, len(messages))
-            if self._computer is not None:
-                messages.append(observation(self._computer.screenshot()))
+            if self._screen is not None:
+                messages.append(observation(self._screen.screenshot()))
             if self._factorio is not None:
                 state = self._factorio.observe(self._observation_radius)
                 messages.append(game_state_observation(state))

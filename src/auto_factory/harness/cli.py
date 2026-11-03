@@ -9,7 +9,7 @@ from typing import Any
 from langfuse import get_client, propagate_attributes
 from openai import OpenAI
 
-from ..control.computer import Computer, DesktopComputer
+from ..control.computer import Computer, DesktopComputer, Screen, WindowScreen
 from ..control.factorio import FactorioAPI, RconFactorioAPI, rcon_environment
 from .agent import FactorioAgent
 from .tools import ControlMode
@@ -86,16 +86,21 @@ def main() -> None:
 
     control: ControlMode = args.control
     computer: Computer | None = None
+    screen: Screen | None = None
     if control in {"computer", "mixed"}:
-        if sys.platform == "darwin":
+        if sys.platform != "darwin":
+            display = os.environ.get("AUTO_FACTORY_DISPLAY", ":99")
+            computer = DesktopComputer(display)
+        elif control == "mixed":
+            screen = WindowScreen()
+        else:
             print(
-                "Computer control needs an isolated display, which macOS lacks; "
-                "use --control api.",
+                "Desktop input needs an isolated display, which macOS lacks; use "
+                "--control mixed to act through the API while watching the window, "
+                "or --control api.",
                 file=sys.stderr,
             )
             raise SystemExit(2)
-        display = os.environ.get("AUTO_FACTORY_DISPLAY", ":99")
-        computer = DesktopComputer(display)
 
     client = OpenAI()
     agent = FactorioAgent(
@@ -106,6 +111,7 @@ def main() -> None:
         control=control,
         observation_radius=args.observation_radius,
         max_steps=args.max_steps,
+        screen=screen,
     )
 
     print(f"Starting {control} control. Press Ctrl-C to stop.", flush=True)

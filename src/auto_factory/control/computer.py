@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 import time
 from dataclasses import dataclass
@@ -47,9 +48,11 @@ class Screenshot:
     height: int
 
 
-class Computer(Protocol):
+class Screen(Protocol):
     def screenshot(self) -> Screenshot: ...
 
+
+class Computer(Screen, Protocol):
     def game_action(self, action: str, duration: float) -> None: ...
 
     def type_text(self, text: str, interval: float) -> None: ...
@@ -86,6 +89,70 @@ def normalized_to_pixel(value: int, size: int) -> int:
     if size < 1:
         raise ValueError("screen dimensions must be positive")
     return min(size - 1, int(value / NORMALIZED_SCREEN_SIZE * size))
+
+
+class WindowScreen:
+    """Captures the Factorio window on macOS, even when other windows cover it."""
+
+    def __init__(self) -> None:
+        try:
+            # PyObjC creates framework symbols lazily, out of type checkers' sight.
+            quartz: Any = importlib.import_module("Quartz")
+        except ImportError as exc:
+            raise RuntimeError(
+                "Window capture dependencies are unavailable; run `uv sync`."
+            ) from exc
+        # Prompts for the permission the first time.
+        if not quartz.CGRequestScreenCaptureAccess():
+            raise RuntimeError(
+                "Grant your terminal Screen Recording in System Settings > "
+                "Privacy & Security, then retry."
+            )
+        self._quartz = quartz
+
+    def screenshot(self) -> Screenshot:
+        quartz = self._quartz
+        windows = quartz.CGWindowListCopyWindowInfo(
+            quartz.kCGWindowListOptionAll, quartz.kCGNullWindowID
+        )
+        # Factorio also owns thin menu-bar windows on every display.
+        game = max(
+            (
+                window
+                for window in windows
+                if str(window.get("kCGWindowOwnerName", "")).startswith("Factorio")
+                and window.get("kCGWindowLayer") == 0
+            ),
+            key=lambda window: (
+                window["kCGWindowBounds"]["Width"] * window["kCGWindowBounds"]["Height"]
+            ),
+            default=None,
+        )
+        if game is None:
+            raise RuntimeError("Factorio is not running; run `auto-factory-game`.")
+
+        # Nominal resolution: one pixel per point, so Retina captures stay small.
+        image = quartz.CGWindowListCreateImage(
+            quartz.CGRectNull,
+            quartz.kCGWindowListOptionIncludingWindow,
+            game["kCGWindowNumber"],
+            quartz.kCGWindowImageBoundsIgnoreFraming
+            | quartz.kCGWindowImageNominalResolution,
+        )
+        if image is None:
+            raise RuntimeError("Could not capture the Factorio window.")
+        data = quartz.CFDataCreateMutable(None, 0)
+        destination = quartz.CGImageDestinationCreateWithData(
+            data, "public.png", 1, None
+        )
+        quartz.CGImageDestinationAddImage(destination, image, None)
+        if not quartz.CGImageDestinationFinalize(destination):
+            raise RuntimeError("Could not encode the Factorio window capture.")
+        return Screenshot(
+            png=bytes(data),
+            width=quartz.CGImageGetWidth(image),
+            height=quartz.CGImageGetHeight(image),
+        )
 
 
 class DesktopComputer:

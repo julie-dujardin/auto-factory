@@ -60,3 +60,28 @@ def test_macos_rejects_computer_control(monkeypatch, capsys) -> None:
 
     assert exit_info.value.code == 2
     assert "--control api" in capsys.readouterr().err
+
+
+def test_macos_mixed_watches_the_window(monkeypatch) -> None:
+    class Built(Exception):
+        pass
+
+    def build_agent(**kwargs: object) -> None:
+        built.update(kwargs)
+        raise Built
+
+    built: dict[str, object] = {}
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    monkeypatch.setattr(cli.sys, "argv", ["auto-factory", "--control", "mixed", "x"])
+    monkeypatch.setenv("OPENAI_API_KEY", "key")
+    monkeypatch.setenv("MODEL_NAME", "model")
+    monkeypatch.setenv("FACTORIO_RCON_PASSWORD", "secret")
+    monkeypatch.setattr(cli, "RconFactorioAPI", lambda *_: CountingFactorio(0))
+    monkeypatch.setattr(cli, "WindowScreen", lambda: "window")
+    monkeypatch.setattr(cli, "FactorioAgent", build_agent)
+
+    with pytest.raises(Built):
+        cli.main()
+
+    assert built["computer"] is None
+    assert built["screen"] == "window"

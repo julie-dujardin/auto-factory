@@ -19,7 +19,7 @@ from auto_factory.harness.agent import (
     usage_details,
 )
 from auto_factory.harness.tasks import TaskTree
-from auto_factory.harness.tools import ControlMode, execute_tool, tools_for_mode
+from auto_factory.harness.tools import execute_tool, tools_for
 
 
 class FakeCall:
@@ -272,6 +272,32 @@ def test_api_agent_uses_state_without_screenshot() -> None:
     assert "game_action" not in {tool["function"]["name"] for tool in tools}
 
 
+def test_screen_only_mixed_agent_watches_and_acts_through_api() -> None:
+    completions = FakeCompletions(
+        [
+            FakeCall("propose_approaches", APPROACHES),
+            FakeCall("complete_task", '{"result":"seen"}'),
+        ]
+    )
+    agent = FactorioAgent(
+        completions.create,
+        None,
+        "test-model",
+        factorio=FakeFactorio(),
+        control="mixed",
+        report=lambda _: None,
+        screen=FakeComputer(),
+    )
+
+    assert agent.run("look") == "seen"
+    request = completions.requests[0]
+    names = {tool["function"]["name"] for tool in request["tools"]}
+    assert "api_craft" in names
+    assert names.isdisjoint({"game_action", "drag_build"})
+    assert "API tools to act" in request["messages"][0]["content"]
+    assert any(isinstance(message["content"], list) for message in request["messages"])
+
+
 DRAG_PLAN = {
     "start": {"dx": 1.5, "dy": 0.25},
     "finish": {"dx": 5.5, "dy": 0.25},
@@ -332,12 +358,12 @@ def test_drag_build_finishes_after_resolution_mismatch() -> None:
     ]
 
 
-def test_drag_build_is_mixed_only() -> None:
-    def names(mode: ControlMode) -> set[str]:
-        return {tool["function"]["name"] for tool in tools_for_mode(mode)}
+def test_drag_build_needs_desktop_and_api() -> None:
+    def names(desktop: bool, api: bool) -> set[str]:
+        return {tool["function"]["name"] for tool in tools_for(desktop, api)}
 
-    assert "drag_build" in names("mixed")
-    assert "drag_build" not in names("api") | names("computer")
+    assert "drag_build" in names(desktop=True, api=True)
+    assert "drag_build" not in names(True, False) | names(False, True)
 
 
 def test_thinking_uses_chatml_parts() -> None:
