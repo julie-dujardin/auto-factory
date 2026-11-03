@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -10,6 +11,11 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+
+from .factorio import rcon_environment
+
+MOD_NAME = "auto_factory"
+MOD_SOURCE = Path(__file__).resolve().parents[3] / "factorio_mod/auto_factory_0.1.0"
 
 _FLATPAK_ROOT = Path.home() / ".var/app/com.valvesoftware.Steam"
 _MACOS_SUPPORT = Path.home() / "Library/Application Support"
@@ -43,23 +49,66 @@ def find_factorio() -> Path:
     raise RuntimeError("Factorio was not found; set FACTORIO_BIN.")
 
 
-def nested_config(directory: Path) -> Path | None:
-    for data_dir in FACTORIO_DATA_DIRS:
-        source = data_dir / "config/config.ini"
-        if not source.is_file():
-            continue
+def prepare_game(directory: Path) -> Path:
+    data_dir = next(
+        (path for path in FACTORIO_DATA_DIRS if (path / "config/config.ini").is_file()),
+        None,
+    )
+    if data_dir is None:
+        raise SystemExit("Factorio has no config yet; start it once, quit, and retry.")
+    install_mod(data_dir / "mods")
 
-        contents = source.read_text()
-        contents = re.sub(
-            r"(?m)^write-data=.*$",
-            f"write-data={data_dir}",
-            contents,
-            count=1,
+    _, port, password = rcon_environment()
+    contents = (data_dir / "config/config.ini").read_text()
+    for section, key, value in (
+        ("path", "write-data", str(data_dir)),
+        # Loopback only: RCON runs arbitrary Lua in the game.
+        ("other", "local-rcon-socket", f"127.0.0.1:{port}"),
+        ("other", "local-rcon-password", password),
+    ):
+        contents = set_option(contents, section, key, value)
+    config = directory / "config.ini"
+    config.write_text(contents)
+    return config
+
+
+def install_mod(mods: Path) -> None:
+    link = mods / MOD_SOURCE.name
+    if link.is_symlink():
+        link.unlink()
+    elif link.exists():
+        raise SystemExit(
+            f"{link} is not a link; remove it so this checkout's mod loads."
         )
-        destination = directory / "config.ini"
-        destination.write_text(contents)
-        return destination
-    return None
+    mods.mkdir(exist_ok=True)
+    link.symlink_to(MOD_SOURCE, target_is_directory=True)
+
+    # New mods start enabled; this only undoes an earlier disable.
+    mod_list = mods / "mod-list.json"
+    if not mod_list.is_file():
+        return
+    listing = json.loads(mod_list.read_text())
+    for mod in listing["mods"]:
+        if mod["name"] == MOD_NAME and not mod["enabled"]:
+            mod["enabled"] = True
+            mod_list.write_text(json.dumps(listing, indent=2))
+
+
+def set_option(contents: str, section: str, key: str, value: str) -> str:
+    line = f"{key}={value}"
+    # Factorio writes unset options as commented-out defaults.
+    contents, count = re.subn(
+        rf"(?m)^(?:;[ \t]*)?{re.escape(key)}=.*$", lambda _: line, contents, count=1
+    )
+    if count:
+        return contents
+    contents, count = re.subn(
+        rf"(?m)^\[{section}\]$",
+        lambda header: f"{header[0]}\n{line}",
+        contents,
+        count=1,
+    )
+    return contents if count else f"{contents}\n[{section}]\n{line}\n"
 
 
 def wait_for_display(process: subprocess.Popen, display: str) -> None:
@@ -89,23 +138,20 @@ def stop(process: subprocess.Popen) -> None:
         process.wait()
 
 
-def run_game(factorio: Path, environment: dict[str, str], banner: str) -> int:
+def run_game(
+    factorio: Path, config: Path, environment: dict[str, str], banner: str
+) -> int:
     environment.setdefault("SteamAppId", "427520")
     environment.setdefault("SteamGameId", "427520")
-    with tempfile.TemporaryDirectory(prefix="auto-factory-game-") as directory:
-        config = nested_config(Path(directory))
-        command = [str(factorio)]
-        if config is not None:
-            command.extend(["--config", str(config)])
-        print(banner, flush=True)
-        game = subprocess.Popen(command, env=environment)
-        try:
-            return game.wait()
-        finally:
-            stop(game)
+    print(banner, flush=True)
+    game = subprocess.Popen([str(factorio), "--config", str(config)], env=environment)
+    try:
+        return game.wait()
+    finally:
+        stop(game)
 
 
-def run_isolated(factorio: Path) -> int:
+def run_isolated(factorio: Path, config: Path) -> int:
     display = os.environ.get("AUTO_FACTORY_DISPLAY", ":99")
     size = os.environ.get("AUTO_FACTORY_SIZE", "1920x1080")
     if not re.fullmatch(r":\d+(?:\.\d+)?", display):
@@ -134,6 +180,7 @@ def run_isolated(factorio: Path) -> int:
         wait_for_display(xwayland, display)
         return run_game(
             factorio,
+            config,
             os.environ | {"DISPLAY": display, "SDL_VIDEODRIVER": "x11"},
             f"Factorio is isolated on DISPLAY={display}. In another terminal run:\n"
             "  uv run auto-factory 'your task'",
@@ -152,19 +199,22 @@ def main() -> None:
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
 
-    try:
-        if sys.platform == "darwin":
-            code = run_game(
-                factorio,
-                os.environ.copy(),
-                "macOS has no isolated display, so only API control works. "
-                "In another terminal run:\n"
-                "  uv run auto-factory --control api 'your task'",
-            )
-        else:
-            code = run_isolated(factorio)
-    except KeyboardInterrupt:
-        return
+    with tempfile.TemporaryDirectory(prefix="auto-factory-game-") as directory:
+        config = prepare_game(Path(directory))
+        try:
+            if sys.platform == "darwin":
+                code = run_game(
+                    factorio,
+                    config,
+                    os.environ.copy(),
+                    "macOS has no isolated display, so only API control works. "
+                    "Host a multiplayer game, then in another terminal run:\n"
+                    "  uv run auto-factory --control api 'your task'",
+                )
+            else:
+                code = run_isolated(factorio, config)
+        except KeyboardInterrupt:
+            return
     raise SystemExit(code)
 
 

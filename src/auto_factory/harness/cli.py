@@ -10,7 +10,7 @@ from langfuse import get_client, propagate_attributes
 from openai import OpenAI
 
 from ..control.computer import Computer, DesktopComputer
-from ..control.factorio import FactorioAPI, RconFactorioAPI
+from ..control.factorio import FactorioAPI, RconFactorioAPI, rcon_environment
 from .agent import FactorioAgent
 from .tools import ControlMode
 
@@ -41,21 +41,6 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def rcon_from_environment() -> RconFactorioAPI:
-    password = os.environ.get("FACTORIO_RCON_PASSWORD")
-    if not password:
-        raise SystemExit("Set FACTORIO_RCON_PASSWORD for API control.")
-    try:
-        port = int(os.environ.get("FACTORIO_RCON_PORT", "27015"))
-    except ValueError as exc:
-        raise SystemExit("FACTORIO_RCON_PORT must be an integer.") from exc
-    return RconFactorioAPI(
-        host=os.environ.get("FACTORIO_RCON_HOST", "127.0.0.1"),
-        port=port,
-        password=password,
-    )
-
-
 def researched_count(factorio: FactorioAPI) -> int:
     return int(factorio.observe(2)["research"]["researched"])
 
@@ -76,7 +61,9 @@ def main() -> None:
         raise SystemExit(2)
 
     needs_rcon = args.control in {"api", "mixed"} or args.check_api
-    factorio: FactorioAPI | None = rcon_from_environment() if needs_rcon else None
+    factorio: FactorioAPI | None = (
+        RconFactorioAPI(*rcon_environment()) if needs_rcon else None
+    )
     if args.check_api:
         assert factorio is not None
         print(json.dumps(factorio.observe(args.observation_radius), indent=2))

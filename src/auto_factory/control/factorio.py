@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Protocol
 
@@ -28,6 +29,17 @@ def _restore_empty_list(result: Any, path: tuple[str, ...]) -> None:
         parent = parent.get(key) if isinstance(parent, dict) else None
     if isinstance(parent, dict) and parent.get(path[-1]) == {}:
         parent[path[-1]] = []
+
+
+def rcon_environment() -> tuple[str, int, str]:
+    password = os.environ.get("FACTORIO_RCON_PASSWORD")
+    if not password:
+        raise SystemExit("Set FACTORIO_RCON_PASSWORD for API control.")
+    try:
+        port = int(os.environ.get("FACTORIO_RCON_PORT", "27015"))
+    except ValueError as exc:
+        raise SystemExit("FACTORIO_RCON_PORT must be an integer.") from exc
+    return os.environ.get("FACTORIO_RCON_HOST", "127.0.0.1"), port, password
 
 
 class RawRconClient(Protocol):
