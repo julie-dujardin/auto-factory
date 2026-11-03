@@ -102,6 +102,19 @@ local function underground_pair(entity)
   return nil
 end
 
+-- Power switches merge sub networks, so the parent network is the one sharing power.
+local function network_power(pole)
+  local network = pole.electric_network
+  if not network then
+    return nil
+  end
+  local flow = network.parent_network.flow_last_tick
+  return {
+    available_kw = common.rounded(flow.maximum_production * 60 / 1000),
+    demand_kw = common.rounded(flow.maximum_consumption * 60 / 1000),
+  }
+end
+
 function entities.entry(entity, origin)
   local entry = {
     name = entity.name,
@@ -120,6 +133,9 @@ function entities.entry(entity, origin)
   if entity.type == "underground-belt" or entity.type == "pipe-to-ground" then
     local pair = underground_pair(entity)
     entry.pair = pair and common.offset_from(origin, pair.position) or "unconnected"
+  end
+  if entity.type == "electric-pole" then
+    entry.power = network_power(entity)
   end
   if entity.health then
     entry.health = common.rounded(entity.health)
