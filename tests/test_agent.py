@@ -152,6 +152,33 @@ def test_game_tools_need_an_approach() -> None:
     )
 
 
+def test_recipe_lookup_needs_no_approach() -> None:
+    completions = FakeCompletions(
+        [
+            [
+                FakeCall("api_recipe", '{"item":"iron-gear-wheel"}'),
+                FakeCall("api_craft", '{"recipe":"iron-gear-wheel","count":1}', "c2"),
+            ],
+            FakeCall("fail_task", '{"reason":"gave up"}'),
+        ]
+    )
+    factorio = FakeFactorio()
+    agent = FactorioAgent(
+        completions.create,
+        None,
+        "test-model",
+        factorio=factorio,
+        control="api",
+        report=lambda _: None,
+    )
+
+    assert agent.run("craft") == "Failed: gave up"
+    assert factorio.actions == [("api_recipe", {"item": "iron-gear-wheel"})]
+    assert completions.requests[1]["messages"][-3]["content"].startswith(
+        "error: the goal has no approach yet"
+    )
+
+
 def test_closing_a_task_drops_its_steps() -> None:
     completions = FakeCompletions(
         [

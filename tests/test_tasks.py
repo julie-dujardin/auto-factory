@@ -84,7 +84,7 @@ def test_render_marks_current_and_collapses_closed_tasks() -> None:
             "    [x] 1.1. coal -> coal at 3,4",
             "[ ] 2. lab (done when: lab works)",
             "Current task: 1. fuel",
-            "It has no approach: call add_tasks or propose_approaches before using "
-            "game tools.",
+            "It has no approach: look up recipes with api_recipe, then call "
+            "add_tasks or propose_approaches before using other game tools.",
         ]
     )

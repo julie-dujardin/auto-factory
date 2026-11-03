@@ -142,8 +142,8 @@ class TaskTree:
             lines.append(f"Current task: {self.current.label}")
             if self.current.approach is None:
                 lines.append(
-                    "It has no approach: call add_tasks or propose_approaches before "
-                    "using game tools."
+                    "It has no approach: look up recipes with api_recipe, then call "
+                    "add_tasks or propose_approaches before using other game tools."
                 )
         return "\n".join(lines)
 

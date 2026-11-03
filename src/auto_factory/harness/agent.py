@@ -29,10 +29,16 @@ Research of type "trigger" completes automatically when the required action occu
 
 Avoid manual actions: prefer using machines rather than performing manual actions like mining.
 
+Never guess a recipe. Your memory of ingredients, amounts, crafting times, machines,
+and unlock state is unreliable; api_recipe is the source of truth. Look up the goal's
+items and their ingredients with api_recipe before planning, and again for every new
+item you plan to craft, smelt, or build. api_recipe works at any time, even before
+the current task has an approach.
+
 Plan with the task tools before acting. Split the goal into ordered tasks with
 add_tasks. For the current task, either split it further or, once it is concrete, call
 propose_approaches with genuinely different ways to do it, ranked against the goal's
-constraints. Game tools only run while the current task has an approach. Call
+constraints. Other game tools only run while the current task has an approach. Call
 complete_task when its done_when holds, recording the locations and facts later tasks
 need: a closed task's steps are removed from your context. Call fail_task when an
 approach does not work, saying what you learned. Completing or failing the goal ends
@@ -289,7 +295,7 @@ class FactorioAgent:
     def _execute(self, tasks: TaskTree, name: str, arguments: dict[str, Any]) -> str:
         if name in TASK_TOOL_NAMES:
             return tasks.handle(name, arguments)
-        if tasks.current.approach is None:
+        if tasks.current.approach is None and name != "api_recipe":
             raise ValueError(
                 f"{tasks.current.label} has no approach yet; call add_tasks or "
                 "propose_approaches first"
