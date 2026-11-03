@@ -90,6 +90,18 @@ function entities.find(player, name, position)
   common.fail("no " .. name .. " at " .. requested .. "; nearest: " .. table.concat(offsets, ", "))
 end
 
+local function underground_pair(entity)
+  if entity.type == "underground-belt" then
+    return entity.underground_belt_neighbour
+  end
+  for _, connection in pairs(entity.get_fluid_box_pipe_connections(1) or {}) do
+    if connection.connection_type == "underground" then
+      return connection.target
+    end
+  end
+  return nil
+end
+
 function entities.entry(entity, origin)
   local entry = {
     name = entity.name,
@@ -104,6 +116,10 @@ function entities.entry(entity, origin)
   end
   if entity.type == "underground-belt" then
     entry.underground = entity.belt_to_ground_type
+  end
+  if entity.type == "underground-belt" or entity.type == "pipe-to-ground" then
+    local pair = underground_pair(entity)
+    entry.pair = pair and common.offset_from(origin, pair.position) or "unconnected"
   end
   if entity.health then
     entry.health = common.rounded(entity.health)

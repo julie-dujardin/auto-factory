@@ -35,8 +35,8 @@ Research of type "trigger" completes automatically when the required action occu
 
 Avoid manual actions: prefer using machines rather than performing manual actions like mining.
 
-Never guess a recipe. Your memory of ingredients, amounts, crafting times, machines,
-and unlock state is unreliable; api_recipe is the source of truth. Look up the goal's
+Never guess game information. Your memory of ingredients, amounts, crafting times, machines,
+thier dimensions, and unlock state is unreliable; api_recipe is the source of truth. Look up the goal's
 items and their ingredients with api_recipe before planning, and again for every new
 item you plan to craft, smelt, or build. Likewise never guess an entity's size or
 where it takes and puts items and fluids: look it up with api_entity_info before
@@ -83,11 +83,12 @@ An underground belt pair carries a belt under anything, with up to 4 tiles betwe
 its ends (6 fast, 8 express, 10 turbo). Place the entrance before the obstacle and the
 exit after it with separate api_place calls, both facing the flow: the second becomes
 the exit of the nearest entrance of the same tier facing the same way behind it.
-api_scan shows which end is the input and which the output.
+api_scan shows which end is the input and which the output, and where its pair is.
 
 A pipe-to-ground pair carries fluid under anything, with up to 9 tiles between its
 ends. Each end faces its above-ground pipe connection and connects underground on the
-opposite side, so the two ends of a pair face away from each other.
+opposite side, so the two ends of a pair face away from each other. api_scan shows
+where each end's pair is.
 """
 
 
