@@ -99,7 +99,7 @@ def game_state_observation(state: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def trim_images(messages: list[dict[str, Any]], keep: int = 3) -> None:
+def trim_images(messages: list[dict[str, Any]], keep: int = 1) -> None:
     seen = 0
     for message in reversed(messages):
         content = message.get("content")

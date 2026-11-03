@@ -441,9 +441,9 @@ def test_trim_game_states_keeps_latest_three() -> None:
     assert messages[2]["content"] == '<game_state>\n{"tick":2}\n</game_state>'
 
 
-def test_trim_images_keeps_latest_three() -> None:
+def test_trim_images_keeps_latest() -> None:
     messages = [
-        observation(Screenshot(str(index).encode(), 1, 1)) for index in range(5)
+        observation(Screenshot(str(index).encode(), 1, 1)) for index in range(3)
     ]
 
     trim_images(messages)
