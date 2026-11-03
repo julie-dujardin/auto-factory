@@ -101,9 +101,13 @@ function handlers.observe(params)
   end
   table.sort(candidates, function(a, b) return a.distance < b.distance end)
   local nearby_entries = {}
+  local networks = {}
   for index = 1, math.min(NEARBY_LISTED, #candidates) do
     local candidate = candidates[index]
-    table.insert(nearby_entries, candidate.entry or entities.entry(candidate.entity, origin))
+    table.insert(
+      nearby_entries,
+      candidate.entry or entities.entry(candidate.entity, origin, networks)
+    )
   end
 
   return {
@@ -124,6 +128,7 @@ function handlers.observe(params)
     resources = resources,
     entities = nearby_entries,
     omitted = #candidates - #nearby_entries,
+    power_networks = networks,
   }
 end
 
@@ -214,9 +219,10 @@ function handlers.find(params)
   end
 
   local results = {}
+  local networks = {}
   for index = 1, math.min(limit, #matches) do
     local match = matches[index]
-    local entry = entities.entry(match.entity, origin)
+    local entry = entities.entry(match.entity, origin, networks)
     entry.distance = common.rounded(math.sqrt(match.distance))
     table.insert(results, entry)
   end
@@ -225,6 +231,7 @@ function handlers.find(params)
     matched = #matches,
     totals = totals,
     entities = results,
+    power_networks = networks,
   }
 end
 

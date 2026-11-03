@@ -186,17 +186,30 @@ local function underground_pair(entity)
   return nil
 end
 
--- Power switches merge sub networks, so the parent network is the one sharing power.
-local function network_power(pole)
-  local network = pole.electric_network
-  if not network then
+-- Power switches merge sub networks into a parent sharing power, so the parent is the
+-- network, named by its lowest sub network id. Each one is added to networks once.
+local function network_id(pole, networks)
+  local sub_network = pole.electric_network
+  if not sub_network then
     return nil
   end
-  local flow = network.parent_network.flow_last_tick
-  return {
+  local parent = sub_network.parent_network
+  local id = sub_network.id
+  for _, other in pairs(parent.sub_networks) do
+    id = math.min(id, other.id)
+  end
+  for _, known in pairs(networks) do
+    if known.id == id then
+      return id
+    end
+  end
+  local flow = parent.flow_last_tick
+  table.insert(networks, {
+    id = id,
     available_kw = common.rounded(flow.maximum_production * 60 / 1000),
     demand_kw = common.rounded(flow.maximum_consumption * 60 / 1000),
-  }
+  })
+  return id
 end
 
 local function supply_area(pole, origin)
@@ -208,7 +221,8 @@ local function supply_area(pole, origin)
   }
 end
 
-function entities.entry(entity, origin)
+-- Collects the electric networks of listed poles into networks.
+function entities.entry(entity, origin, networks)
   local entry = {
     id = entities.id(entity),
     name = entity.name,
@@ -230,7 +244,7 @@ function entities.entry(entity, origin)
   end
   if entity.type == "electric-pole" then
     entry.supply_area = supply_area(entity, origin)
-    entry.power = network_power(entity)
+    entry.network = network_id(entity, networks)
   end
   if entity.health then
     entry.health = common.rounded(entity.health)

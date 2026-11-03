@@ -171,8 +171,10 @@ API_TOOLS = [
         "end. Underground belts and pipes give pair: the other end's position, or "
         "unconnected. Electric poles give supply_area: the left_top and right_bottom "
         "corners of the square they cover, powering every machine that overlaps it; and "
-        "their network's power: available_kw that generators can supply and demand_kw "
-        "that machines draw.",
+        "network: the id of the electric network they are wired into. power_networks "
+        "lists each network of the listed poles once with available_kw that its "
+        "generators can supply and demand_kw that its machines draw; poles with "
+        "different ids share no power.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],
@@ -182,7 +184,8 @@ API_TOOLS = [
         "api_find",
         "Search entities around the player over a wider area than api_scan, e.g. the "
         "nearest iron-ore or every furnace with no_fuel. Returns per-name totals for all "
-        "matches and the first limit entities after sorting. Needs a name or type.",
+        "matches and the first limit entities after sorting, read as in api_scan, "
+        "power_networks included. Needs a name or type.",
         _object_schema(
             {
                 "name": {
