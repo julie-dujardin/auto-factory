@@ -536,6 +536,70 @@ LOOKUP_TOOL_NAMES = {
 }
 
 
+def _feedback_tool(tool_names: list[str]) -> dict[str, Any]:
+    return _tool(
+        "feedback",
+        "Report a problem with your tools, observations, instructions, or harness to "
+        "the developers. It changes nothing in this run and does not stop the chain. "
+        "Categories: missing_tool, an action no tool does; tool_bug, a result that "
+        "contradicts the tool's description or the next observation; "
+        "missing_observation, something you needed to see that no observation or "
+        "lookup shows; misleading_docs, a tool worked as built but its description or "
+        "your instructions led you wrong; friction, it works but takes too many calls "
+        "or turns, or a limit is too tight; harness, the planning loop or context got "
+        "in the way, e.g. a fact lost when a closed task's steps left your context; "
+        "task_issue, the goal is ambiguous or impossible from the start. Your own "
+        "mistakes are worth reporting only when the docs caused them.",
+        _object_schema(
+            {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "missing_tool",
+                        "tool_bug",
+                        "missing_observation",
+                        "misleading_docs",
+                        "friction",
+                        "harness",
+                        "task_issue",
+                    ],
+                },
+                "tool": {
+                    "type": "string",
+                    "enum": tool_names,
+                    "description": "The tool concerned, if any.",
+                },
+                "summary": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "One line naming the problem.",
+                },
+                "expected": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "What you needed or expected.",
+                },
+                "observed": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "What happened or was available instead, quoting "
+                    "the call and result when there is one.",
+                },
+                "impact": {
+                    "type": "string",
+                    "enum": ["blocked", "worked_around", "minor"],
+                },
+                "workaround": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "description": "How you got past it, if you did.",
+                },
+            },
+            ["category", "summary", "expected", "observed", "impact"],
+        ),
+    )
+
+
 def tools_for(desktop: bool, api: bool) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     if desktop:
@@ -545,6 +609,7 @@ def tools_for(desktop: bool, api: bool) -> list[dict[str, Any]]:
     if desktop and api:
         selected.extend(MIXED_TOOLS)
     selected.extend(TASK_TOOLS)
+    selected.append(_feedback_tool([tool["function"]["name"] for tool in selected]))
     return selected
 
 
@@ -554,7 +619,7 @@ def execute_tool(
     name: str,
     arguments: dict[str, Any],
 ) -> str:
-    if name in TASK_TOOL_NAMES:
+    if name in TASK_TOOL_NAMES or name == "feedback":
         raise ValueError(f"{name} is handled by the agent loop")
     if name == "drag_build":
         if computer is None or factorio is None:

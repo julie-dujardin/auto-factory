@@ -47,6 +47,12 @@ class FakeCompletions:
     def create(self, **kwargs: object) -> SimpleNamespace:
         # The agent keeps mutating its message list after each request.
         self.requests.append(deepcopy(kwargs))
+        if not self.calls:
+            # The look back, with nothing to report.
+            message = SimpleNamespace(content="nothing", tool_calls=None)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=message, finish_reason="stop")]
+            )
         calls = self.calls.pop(0)
         tool_calls = calls if isinstance(calls, list) else [calls]
         message = SimpleNamespace(content=None, tool_calls=tool_calls)
@@ -142,7 +148,7 @@ def test_agent_acts_on_an_approach_then_completes_goal() -> None:
 
     assert computer_agent(completions, computer).run("move") == "done"
     assert computer.actions == [("game_action", ("move_up", 0.5))]
-    assert len(completions.requests) == 3
+    assert len(completions.requests) == 4
 
 
 def test_cut_off_turn_warns_to_think_less() -> None:
@@ -217,7 +223,7 @@ def test_closing_a_task_drops_its_steps() -> None:
     )
 
     assert computer_agent(completions, FakeComputer()).run("move") == "done"
-    last = completions.requests[-1]["messages"]
+    last = completions.requests[-2]["messages"]
     called = [
         call["function"]["name"]
         for message in last
@@ -272,6 +278,136 @@ def test_closing_a_task_ends_the_chain() -> None:
     assert agent.run("move") == "done"
     assert computer.actions == [("game_action", ("move_up", 0.5))]
     assert "step 2: skipped wait" in reports
+
+
+class FakeObservation:
+    def __init__(self, **fields: Any) -> None:
+        self.fields = fields
+
+    def __enter__(self) -> FakeObservation:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def update(self, **fields: Any) -> None:
+        self.fields.update(fields)
+
+
+class FakeLangfuse:
+    def __init__(self) -> None:
+        self.observations: list[FakeObservation] = []
+
+    def start_as_current_observation(self, **fields: Any) -> FakeObservation:
+        self.observations.append(FakeObservation(**fields))
+        return self.observations[-1]
+
+    def named(self, name: str) -> list[dict[str, Any]]:
+        return [o.fields for o in self.observations if o.fields["name"] == name]
+
+
+MOVE = '{"action":"move_up","duration":0.5}'
+REPORT = {
+    "category": "tool_bug",
+    "tool": "game_action",
+    "summary": "moved the wrong way",
+    "expected": "north",
+    "observed": "south",
+    "impact": "worked_around",
+}
+FEEDBACK = json.dumps(REPORT)
+
+
+def test_feedback_is_traced_without_breaking_the_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    langfuse = FakeLangfuse()
+    monkeypatch.setattr("auto_factory.harness.agent.get_client", lambda: langfuse)
+    completions = FakeCompletions(
+        [
+            [
+                FakeCall("feedback", FEEDBACK),
+                FakeCall("propose_approaches", APPROACHES, "call-2"),
+                FakeCall("game_action", MOVE, "call-3"),
+            ],
+            [
+                FakeCall("feedback", FEEDBACK),
+                FakeCall("complete_task", '{"result":"done"}', "call-2"),
+            ],
+        ]
+    )
+    computer = FakeComputer()
+
+    assert computer_agent(completions, computer).run("move") == "done"
+    assert computer.actions == [("game_action", ("move_up", 0.5))]
+    assert {
+        "role": "tool",
+        "tool_call_id": "call-1",
+        "content": "ok; recorded, 9 reports left this run",
+    } in completions.requests[1]["messages"]
+    feedback = langfuse.named("feedback")
+    assert [span["level"] for span in feedback] == ["WARNING", "WARNING"]
+    assert feedback[0]["metadata"] == {"previous_call": None}
+    assert feedback[1]["metadata"] == {
+        "previous_call": {
+            "tool": "game_action",
+            "arguments": json.loads(MOVE),
+            "result": "ok",
+        }
+    }
+
+
+def test_feedback_stops_recording_at_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    langfuse = FakeLangfuse()
+    monkeypatch.setattr("auto_factory.harness.agent.get_client", lambda: langfuse)
+    reports = [FakeCall("feedback", FEEDBACK, f"call-{i}") for i in range(11)]
+    completions = FakeCompletions(
+        [[*reports, FakeCall("fail_task", '{"reason":"gave up"}', "call-11")]]
+    )
+
+    assert computer_agent(completions, FakeComputer()).run("move") == "Failed: gave up"
+    feedback = langfuse.named("feedback")
+    assert [span.get("level") for span in feedback] == [*["WARNING"] * 10, None]
+    assert feedback[-1]["output"] == "not recorded: this run's 10 reports are used up"
+    # A full cap leaves nothing for the look back to ask.
+    assert len(completions.requests) == 1
+
+
+def test_look_back_asks_for_unreported_feedback() -> None:
+    completions = FakeCompletions(
+        [
+            [
+                FakeCall("feedback", FEEDBACK),
+                FakeCall("fail_task", '{"reason":"gave up"}', "call-2"),
+            ],
+            FakeCall("feedback", json.dumps(REPORT | {"category": "friction"})),
+        ]
+    )
+    reports: list[str] = []
+    agent = FactorioAgent(
+        completions.create, FakeComputer(), "test-model", report=reports.append
+    )
+
+    assert agent.run("move") == "Failed: gave up"
+    look_back = completions.requests[1]
+    assert look_back["tool_choice"] == "auto"
+    [tool] = look_back["tools"]
+    assert tool["function"]["name"] == "feedback"
+    named = tool["function"]["parameters"]["properties"]["tool"]["enum"]
+    assert {"game_action", "complete_task"} <= set(named)
+    assert "feedback" not in named
+    messages = look_back["messages"]
+    assert messages[-1]["content"] == (
+        "The run is over: Failed: gave up\nLook back over the whole run and report "
+        "with feedback each problem with your tools, observations, instructions, or "
+        "harness that you have not reported yet, up to 9 more. If there is none, "
+        "reply without a tool call. Already reported:\n- moved the wrong way"
+    )
+    assert messages[-2]["content"].startswith("<tasks>\nGoal: move\n")
+    assert messages[-3]["tool_call_id"] == "call-2"
+    assert reports[-1].startswith("look back: feedback {'category': 'friction'")
 
 
 def test_fell_short_flags_blocked_walks_and_partial_lines() -> None:

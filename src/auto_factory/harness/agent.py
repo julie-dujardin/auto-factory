@@ -68,6 +68,10 @@ Keep each turn's thinking short: a turn that thinks too long is cut off before i
 calls a tool. When a plan grows long, record what you have decided with add_tasks and
 work out each task in its own turn.
 
+When a tool is missing, broken, or misleading, when you cannot see something you need,
+or when the planning loop gets in your way, report it with feedback alongside your next
+action, then carry on with a workaround. Never report instead of acting.
+
 A splitter is 2 tiles wide across the flow and 1 long; give api_place the point
 between its two tiles. It splits the items entering its back evenly between the two
 tiles in front, keeping each item on its lane, and sends everything to one side when
@@ -103,6 +107,19 @@ CUT_OFF_WARNING = {
     "a tool, and its thinking is lost. Think less per turn: record what you have "
     "decided with add_tasks, then work out one task at a time.",
 }
+MAX_REPORTS = 10
+
+
+def look_back_prompt(outcome: str, reports: list[str]) -> dict[str, str]:
+    reported = "".join(f"\n- {summary}" for summary in reports) or " none"
+    return {
+        "role": "user",
+        "content": f"The run is over: {outcome}\nLook back over the whole run and "
+        "report with feedback each problem with your tools, observations, "
+        "instructions, or harness that you have not reported yet, up to "
+        f"{MAX_REPORTS - len(reports)} more. If there is none, reply without a tool "
+        f"call. Already reported:{reported}",
+    }
 
 
 def observation(screenshot: Screenshot) -> dict[str, Any]:
@@ -242,8 +259,18 @@ class FactorioAgent:
             {"role": "user", "content": task},
         ]
         tasks = TaskTree(task)
+        reports: list[str] = []
+        outcome = self._play(messages, tasks, reports)
+        self._look_back(messages, tasks, reports, outcome)
+        return outcome
+
+    def _play(
+        self, messages: list[dict[str, Any]], tasks: TaskTree, reports: list[str]
+    ) -> str:
         # Where each task's steps begin, so closing it can drop them.
         starts: dict[Task, int] = {}
+        # The latest other call, attached to feedback as evidence.
+        last_call: dict[str, Any] | None = None
 
         for step in range(1, self._max_steps + 1):
             starts.setdefault(tasks.current, len(messages))
@@ -256,44 +283,9 @@ class FactorioAgent:
             trim_images(messages)
             trim_game_states(messages)
             trim_tasks(messages)
-            parameters: dict[str, str | float] = {
-                "tool_choice": "required",
-                "temperature": 0.8,
-            }
-            with get_client().start_as_current_observation(
-                as_type="generation",
-                name=f"step {step}",
-                model=self._model,
-                input=messages,
-                model_parameters=dict(parameters),
-            ) as generation:
-                response = self._create_completion(
-                    model=self._model,
-                    messages=messages,
-                    tools=self._tools,
-                    **parameters,
-                )
-                choice = response.choices[0]
-                message = choice.message
-                tool_calls = message.tool_calls or []
-                reply = {
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
-                        call.model_dump(exclude_none=True) for call in tool_calls
-                    ],
-                }
-                generation.update(
-                    output=reply | thinking(message),
-                    usage_details=usage_details(response),
-                )
-                cut_off = not tool_calls and choice.finish_reason == "length"
-                if cut_off:
-                    generation.update(
-                        level="WARNING",
-                        status_message="output limit before a tool call",
-                    )
-            messages.append(reply)
+            tool_calls, cut_off = self._complete(
+                f"step {step}", messages, self._tools, "required"
+            )
             if cut_off:
                 self._report(f"step {step}: output limit hit before a tool call")
                 messages.append(CUT_OFF_WARNING)
@@ -318,7 +310,12 @@ class FactorioAgent:
                     ) as span:
                         acted = tasks.current
                         try:
-                            result = self._execute(tasks, name, arguments)
+                            if name == "feedback":
+                                result = self._feedback(
+                                    span, reports, arguments, last_call
+                                )
+                            else:
+                                result = self._execute(tasks, name, arguments)
                         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                             result = f"error: {exc}"
                             span.update(level="ERROR", status_message=str(exc))
@@ -330,8 +327,12 @@ class FactorioAgent:
                             else:
                                 stop = fell_short(name, result)
                         span.update(output=result)
-                    if tasks.finished:
-                        return tasks.outcome
+                    if name != "feedback":
+                        last_call = {
+                            "tool": name,
+                            "arguments": arguments,
+                            "result": result,
+                        }
                 messages.append(tool_result(call, result))
                 if stop:
                     break
@@ -340,10 +341,101 @@ class FactorioAgent:
                 messages.append(
                     tool_result(call, "skipped: the chain stopped at an earlier call")
                 )
+            # The look back needs the run's context, so the goal's steps stay.
+            if tasks.finished:
+                return tasks.outcome
             if cut is not None:
                 del messages[cut:]
 
         return f"Step budget exhausted after {self._max_steps} steps."
+
+    def _complete(
+        self,
+        name: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_choice: str,
+    ) -> tuple[list[Any], bool]:
+        """Request one turn, append it to messages, and say if it was cut off."""
+        parameters: dict[str, str | float] = {
+            "tool_choice": tool_choice,
+            "temperature": 0.8,
+        }
+        with get_client().start_as_current_observation(
+            as_type="generation",
+            name=name,
+            model=self._model,
+            input=messages,
+            model_parameters=dict(parameters),
+        ) as generation:
+            response = self._create_completion(
+                model=self._model,
+                messages=messages,
+                tools=tools,
+                **parameters,
+            )
+            choice = response.choices[0]
+            message = choice.message
+            tool_calls = message.tool_calls or []
+            reply = {
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [
+                    call.model_dump(exclude_none=True) for call in tool_calls
+                ],
+            }
+            generation.update(
+                output=reply | thinking(message),
+                usage_details=usage_details(response),
+            )
+            cut_off = not tool_calls and choice.finish_reason == "length"
+            if cut_off:
+                generation.update(
+                    level="WARNING",
+                    status_message="output limit before a tool call",
+                )
+        messages.append(reply)
+        return tool_calls, cut_off
+
+    def _feedback(
+        self,
+        span: Any,
+        reports: list[str],
+        arguments: dict[str, Any],
+        evidence: dict[str, Any] | None,
+    ) -> str:
+        if len(reports) >= MAX_REPORTS:
+            return f"not recorded: this run's {MAX_REPORTS} reports are used up"
+        reports.append(str(arguments.get("summary", "")))
+        span.update(level="WARNING", metadata={"previous_call": evidence})
+        return f"ok; recorded, {MAX_REPORTS - len(reports)} reports left this run"
+
+    def _look_back(
+        self,
+        messages: list[dict[str, Any]],
+        tasks: TaskTree,
+        reports: list[str],
+        outcome: str,
+    ) -> None:
+        """One last turn to report problems the agent did not stop for mid-run."""
+        if len(reports) >= MAX_REPORTS:
+            return
+        messages.append(tasks_observation(tasks))
+        trim_tasks(messages)
+        messages.append(look_back_prompt(outcome, reports))
+        tools = [tool for tool in self._tools if tool["function"]["name"] == "feedback"]
+        tool_calls, _ = self._complete("look back", messages, tools, "auto")
+        for call in tool_calls:
+            try:
+                arguments = json.loads(call.function.arguments)
+            except json.JSONDecodeError:
+                self._report(f"look back: invalid JSON in {call.function.name}")
+                continue
+            self._report(f"look back: {call.function.name} {arguments}")
+            with get_client().start_as_current_observation(
+                as_type="tool", name="feedback", input=arguments
+            ) as span:
+                span.update(output=self._feedback(span, reports, arguments, None))
 
     def _execute(self, tasks: TaskTree, name: str, arguments: dict[str, Any]) -> str:
         if name in TASK_TOOL_NAMES:
