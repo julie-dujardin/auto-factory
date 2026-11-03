@@ -14,6 +14,9 @@ class CountingFactorio:
     def execute(self, name: str, arguments: dict[str, object]) -> str:
         raise AssertionError("not used")
 
+    def call(self, method: str, params: dict[str, object]) -> object:
+        raise AssertionError("not used")
+
 
 class RecordingEpisode:
     def __init__(self) -> None:

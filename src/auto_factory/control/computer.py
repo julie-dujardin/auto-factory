@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 NORMALIZED_SCREEN_SIZE = 1000
+# A few frames, so the game reads the press and the final position at rest.
+DRAG_SETTLE_SECONDS = 0.05
 
 
 FACTORIO_KEYS: dict[str, tuple[str, ...]] = {
@@ -213,7 +215,9 @@ class DesktopComputer:
         mouse_button = self._resolve_button(button)
         self._mouse.press(mouse_button)
         try:
+            time.sleep(DRAG_SETTLE_SECONDS)
             self.move_cursor(end_x, end_y, duration)
+            time.sleep(DRAG_SETTLE_SECONDS)
         finally:
             self._mouse.release(mouse_button)
 

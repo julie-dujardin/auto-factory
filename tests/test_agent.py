@@ -1,10 +1,14 @@
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
     FactorioAgent,
+    fell_short,
     game_state_observation,
     observation,
     tasks_observation,
@@ -15,11 +19,12 @@ from auto_factory.harness.agent import (
     usage_details,
 )
 from auto_factory.harness.tasks import TaskTree
+from auto_factory.harness.tools import ControlMode, execute_tool, tools_for_mode
 
 
 class FakeCall:
-    def __init__(self, name: str, arguments: str) -> None:
-        self.id = "call-1"
+    def __init__(self, name: str, arguments: str, call_id: str = "call-1") -> None:
+        self.id = call_id
         self.function = SimpleNamespace(name=name, arguments=arguments)
 
     def model_dump(self, exclude_none: bool = True) -> dict[str, object]:
@@ -34,15 +39,16 @@ class FakeCall:
 
 
 class FakeCompletions:
-    def __init__(self, calls: list[FakeCall]) -> None:
+    def __init__(self, calls: list[FakeCall | list[FakeCall]]) -> None:
         self.calls = calls
         self.requests: list[dict[str, Any]] = []
 
     def create(self, **kwargs: object) -> SimpleNamespace:
         # The agent keeps mutating its message list after each request.
         self.requests.append(deepcopy(kwargs))
-        call = self.calls.pop(0)
-        message = SimpleNamespace(content=None, tool_calls=[call])
+        calls = self.calls.pop(0)
+        tool_calls = calls if isinstance(calls, list) else [calls]
+        message = SimpleNamespace(content=None, tool_calls=tool_calls)
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
 
@@ -88,8 +94,9 @@ class FakeComputer:
 
 
 class FakeFactorio:
-    def __init__(self) -> None:
+    def __init__(self, results: dict[str, Any] | None = None) -> None:
         self.actions: list[tuple[str, dict[str, object]]] = []
+        self.results = results or {}
 
     def observe(self, radius: float) -> dict[str, object]:
         return {"radius": radius, "player": {"world_position": {"x": 1, "y": 2}}}
@@ -97,6 +104,10 @@ class FakeFactorio:
     def execute(self, name: str, arguments: dict[str, object]) -> str:
         self.actions.append((name, arguments))
         return '{"queued":1}'
+
+    def call(self, method: str, params: dict[str, Any]) -> Any:
+        self.actions.append((method, params))
+        return self.results[method]
 
 
 APPROACHES = '{"approaches":["a","b"],"reason":"a is best"}'
@@ -163,6 +174,61 @@ def test_closing_a_task_drops_its_steps() -> None:
     assert "[x] 1. walk -> walked north" in last[-1]["content"]
 
 
+def test_chain_stops_at_first_error() -> None:
+    completions = FakeCompletions(
+        [
+            [
+                FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
+                FakeCall("wait", '{"seconds":1}', "call-2"),
+            ],
+            FakeCall("fail_task", '{"reason":"gave up"}'),
+        ]
+    )
+    computer = FakeComputer()
+
+    assert computer_agent(completions, computer).run("move") == "Failed: gave up"
+    assert computer.actions == []
+    assert completions.requests[1]["messages"][-3] == {
+        "role": "tool",
+        "tool_call_id": "call-2",
+        "content": "skipped: the chain stopped at an earlier call",
+    }
+
+
+def test_closing_a_task_ends_the_chain() -> None:
+    completions = FakeCompletions(
+        [
+            FakeCall("add_tasks", '{"tasks":[{"title":"walk","done_when":"moved"}]}'),
+            [
+                FakeCall("propose_approaches", APPROACHES),
+                FakeCall(
+                    "game_action", '{"action":"move_up","duration":0.5}', "call-2"
+                ),
+                FakeCall("complete_task", '{"result":"walked north"}', "call-3"),
+                FakeCall("wait", '{"seconds":1}', "call-4"),
+            ],
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+    computer = FakeComputer()
+    reports: list[str] = []
+    agent = FactorioAgent(
+        completions.create, computer, "test-model", report=reports.append
+    )
+
+    assert agent.run("move") == "done"
+    assert computer.actions == [("game_action", ("move_up", 0.5))]
+    assert "step 2: skipped wait" in reports
+
+
+def test_fell_short_flags_blocked_walks_and_partial_lines() -> None:
+    assert fell_short("api_walk_to", '{"reason":"blocked"}')
+    assert not fell_short("api_walk_to", '{"reason":"arrived"}')
+    assert fell_short("api_place", '{"count":2,"stopped":"out of build reach"}')
+    assert not fell_short("drag_build", '{"placed":{"transport-belt":5}}')
+    assert not fell_short("api_mine", '{"reason":"target gone"}')
+
+
 def test_trim_tasks_keeps_latest() -> None:
     first = TaskTree("goal")
     messages = [tasks_observation(first), tasks_observation(TaskTree("goal 2"))]
@@ -204,6 +270,74 @@ def test_api_agent_uses_state_without_screenshot() -> None:
     tools = completions.requests[0]["tools"]
     assert {tool["function"]["name"] for tool in tools} >= {"api_craft", "add_tasks"}
     assert "game_action" not in {tool["function"]["name"] for tool in tools}
+
+
+DRAG_PLAN = {
+    "start": {"dx": 1.5, "dy": 0.25},
+    "finish": {"dx": 5.5, "dy": 0.25},
+    "tiles": 5,
+    "zoom": 1,
+    "resolution": {"width": 1920, "height": 1080},
+}
+DRAG_ARGUMENTS = {"item": "transport-belt", "dx": 1, "dy": 0, "direction": "east"}
+
+
+def test_mixed_agent_drags_between_tile_centres() -> None:
+    arguments = DRAG_ARGUMENTS | {"count": 8}
+    completions = FakeCompletions(
+        [
+            FakeCall("propose_approaches", APPROACHES),
+            FakeCall("drag_build", json.dumps(arguments)),
+            FakeCall("complete_task", '{"result":"built"}'),
+        ]
+    )
+    computer = FakeComputer()
+    factorio = FakeFactorio(
+        {"drag_prepare": DRAG_PLAN, "drag_finish": {"placed": {"transport-belt": 5}}}
+    )
+    agent = FactorioAgent(
+        completions.create,
+        computer,
+        "test-model",
+        factorio=factorio,
+        control="mixed",
+        report=lambda _: None,
+    )
+
+    assert agent.run("build") == "built"
+    assert computer.actions == [
+        ("wait", (0.25,)),
+        ("drag", (525, 507, 592, 507, "left", 0.25)),
+        ("wait", (0.25,)),
+    ]
+    assert factorio.actions == [("drag_prepare", arguments), ("drag_finish", {})]
+    assert {
+        "role": "tool",
+        "tool_call_id": "call-1",
+        "content": '{"placed":{"transport-belt":5}}',
+    } in completions.requests[2]["messages"]
+
+
+def test_drag_build_finishes_after_resolution_mismatch() -> None:
+    computer = FakeComputer()
+    plan = DRAG_PLAN | {"resolution": {"width": 1280, "height": 720}}
+    factorio = FakeFactorio({"drag_prepare": plan, "drag_finish": {}})
+
+    with pytest.raises(RuntimeError, match="run it fullscreen"):
+        execute_tool(computer, factorio, "drag_build", DRAG_ARGUMENTS | {"count": 1})
+    assert computer.actions == []
+    assert [method for method, _ in factorio.actions] == [
+        "drag_prepare",
+        "drag_finish",
+    ]
+
+
+def test_drag_build_is_mixed_only() -> None:
+    def names(mode: ControlMode) -> set[str]:
+        return {tool["function"]["name"] for tool in tools_for_mode(mode)}
+
+    assert "drag_build" in names("mixed")
+    assert "drag_build" not in names("api") | names("computer")
 
 
 def test_thinking_uses_chatml_parts() -> None:

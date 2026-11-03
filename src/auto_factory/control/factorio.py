@@ -51,6 +51,8 @@ class FactorioAPI(Protocol):
 
     def execute(self, name: str, arguments: dict[str, Any]) -> str: ...
 
+    def call(self, method: str, params: dict[str, Any]) -> Any: ...
+
 
 class RconFactorioAPI:
     def __init__(
@@ -80,7 +82,7 @@ class RconFactorioAPI:
         self._request_id = 0
 
     def observe(self, radius: float) -> dict[str, Any]:
-        result = self._call("observe", {"radius": radius})
+        result = self.call("observe", {"radius": radius})
         if not isinstance(result, dict):
             raise RuntimeError("Factorio returned an invalid observation")
         return result
@@ -110,22 +112,22 @@ class RconFactorioAPI:
         except KeyError as exc:
             raise ValueError(f"unknown Factorio API tool: {name}") from exc
 
-        result = self._call(method, arguments)
+        result = self.call(method, arguments)
         if name in {"api_walk_to", "api_mine", "api_wait"}:
             try:
                 self._wait_for_action()
             finally:
-                result = self._call("stop", {})
+                result = self.call("stop", {})
         return json.dumps(result, separators=(",", ":"))
 
     def _wait_for_action(self) -> None:
         deadline = time.monotonic() + ACTION_TIMEOUT
         while time.monotonic() < deadline:
-            if self._call("status", {}).get("done"):
+            if self.call("status", {}).get("done"):
                 return
             time.sleep(POLL_INTERVAL)
 
-    def _call(self, method: str, params: dict[str, Any]) -> Any:
+    def call(self, method: str, params: dict[str, Any]) -> Any:
         self._request_id += 1
         request = {
             "id": self._request_id,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from ..control.computer import FACTORIO_KEYS, Computer
+from ..control.drag import drag_build
 from ..control.factorio import FactorioAPI
 
 ControlMode = Literal["computer", "api", "mixed"]
@@ -38,6 +39,7 @@ OFFSET = {
     "description": "Tiles from the player; positive dx is east, positive dy is south.",
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
+LINE_COUNT = {"type": "integer", "minimum": 1, "maximum": 50}
 
 
 DESKTOP_TOOLS = [
@@ -244,16 +246,21 @@ API_TOOLS = [
     ),
     _tool(
         "api_place",
-        "Place one item from inventory at an offset from the player within normal "
-        "build reach.",
+        "Place count items from inventory in a straight row starting at an offset "
+        "from the player, each facing direction, stepping by the entity's size toward "
+        "line_direction; a belt line uses the same value for both. Stops at the first "
+        "tile that is blocked, out of build reach, or out of items, and returns how "
+        "many were placed and the offset of the last one.",
         _object_schema(
             {
                 "item": {"type": "string"},
                 "dx": OFFSET,
                 "dy": OFFSET,
                 "direction": DIRECTION,
+                "count": LINE_COUNT,
+                "line_direction": DIRECTION,
             },
-            ["item", "dx", "dy", "direction"],
+            ["item", "dx", "dy", "direction", "count", "line_direction"],
         ),
     ),
     _tool(
@@ -332,6 +339,28 @@ API_TOOLS = [
         _object_schema(
             {"technology": {"type": "string"}},
             ["technology"],
+        ),
+    ),
+]
+
+
+MIXED_TOOLS = [
+    _tool(
+        "drag_build",
+        "Hold the mouse and drag a straight belt or pipe line like a player, from an "
+        "offset from the player for count tiles toward direction; belts face "
+        "direction. The game bridges obstacles with underground belts or pipes from "
+        "your inventory. Only the part within build reach is built. Returns the items "
+        "used and the offset where the drag ended.",
+        _object_schema(
+            {
+                "item": {"type": "string"},
+                "dx": OFFSET,
+                "dy": OFFSET,
+                "direction": DIRECTION,
+                "count": LINE_COUNT,
+            },
+            ["item", "dx", "dy", "direction", "count"],
         ),
     ),
 ]
@@ -423,6 +452,8 @@ def tools_for_mode(mode: ControlMode) -> list[dict[str, Any]]:
         selected.extend(DESKTOP_TOOLS)
     if mode in {"api", "mixed"}:
         selected.extend(API_TOOLS)
+    if mode == "mixed":
+        selected.extend(MIXED_TOOLS)
     selected.extend(TASK_TOOLS)
     return selected
 
@@ -435,6 +466,10 @@ def execute_tool(
 ) -> str:
     if name in TASK_TOOL_NAMES:
         raise ValueError(f"{name} is handled by the agent loop")
+    if name == "drag_build":
+        if computer is None or factorio is None:
+            raise RuntimeError("drag_build needs both computer and API control")
+        return drag_build(computer, factorio, **arguments)
     if name.startswith("api_"):
         if factorio is None:
             raise RuntimeError("Factorio API control is not configured")

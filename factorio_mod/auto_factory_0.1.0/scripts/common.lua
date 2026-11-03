@@ -62,11 +62,18 @@ function common.position_from(player, params)
   }
 end
 
-function common.direction_from(params)
-  local name = common.required_string(params, "direction")
+common.DIRECTION_STEPS = {
+  [defines.direction.north] = {x = 0, y = -1},
+  [defines.direction.east] = {x = 1, y = 0},
+  [defines.direction.south] = {x = 0, y = 1},
+  [defines.direction.west] = {x = -1, y = 0},
+}
+
+function common.direction_from(params, field)
+  local name = common.required_string(params, field)
   local direction = DIRECTIONS[name]
   if not direction then
-    common.fail("direction must be north, east, south, or west")
+    common.fail(field .. " must be north, east, south, or west")
   end
   return direction
 end
