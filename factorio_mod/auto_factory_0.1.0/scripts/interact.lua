@@ -36,12 +36,12 @@ end
 
 local MAX_LINE = 50
 
+-- Puts what the cursor holds back into the inventory, as pressing Q does.
 local function empty_cursor(player)
-  local cursor = player.cursor_stack
-  if not cursor or cursor.valid_for_read then
-    common.fail("the player cursor must be empty")
+  if not player.clear_cursor() then
+    common.fail("the cursor holds items that do not fit in the inventory")
   end
-  return cursor
+  return player.cursor_stack
 end
 
 local function line_count(params)
@@ -75,6 +75,63 @@ local function snap(value, size)
   return math.floor(value + 0.5)
 end
 
+local OBSTRUCTIONS_LISTED = 5
+
+-- Names what keeps entity from being built at position, or nil when it is unclear.
+local function obstruction(player, entity, position, direction)
+  if not entity then
+    return nil
+  end
+  local width, height = footprint(entity, direction)
+  -- Shrunk so neighbours touching the footprint's edges are not counted.
+  local area = {
+    left_top = {x = position.x - width / 2 + 0.1, y = position.y - height / 2 + 0.1},
+    right_bottom = {x = position.x + width / 2 - 0.1, y = position.y + height / 2 - 0.1},
+  }
+  local layers = {}
+  for layer in pairs(entity.collision_mask.layers) do
+    table.insert(layers, layer)
+  end
+  local surface = player.surface
+  local blockers = {}
+  local character_there = false
+  for _, other in pairs(common.nearest_first(
+    surface.find_entities_filtered {area = area, collision_mask = layers},
+    position
+  )) do
+    if other == player.character then
+      character_there = true
+    elseif #blockers < OBSTRUCTIONS_LISTED then
+      table.insert(blockers, other.name .. " at " .. common.offset_text(player.position, other.position))
+    end
+  end
+  if #blockers > 0 then
+    return "blocked by " .. table.concat(blockers, ", ")
+  end
+  local tiles = surface.find_tiles_filtered {area = area, collision_mask = layers, limit = 1}
+  if #tiles > 0 then
+    return "blocked by " .. tiles[1].name .. " tiles"
+  end
+  if entity.type == "mining-drill" then
+    local radius = entity.mining_drill_radius
+    local ore = surface.count_entities_filtered {
+      area = {
+        left_top = {x = position.x - radius, y = position.y - radius},
+        right_bottom = {x = position.x + radius, y = position.y + radius},
+      },
+      type = "resource",
+      limit = 1,
+    }
+    if ore == 0 then
+      return "a mining drill needs ore in its mining area"
+    end
+  end
+  if character_there then
+    return "the player stands there"
+  end
+  return nil
+end
+
 -- Building refills the cursor from the inventory, so only the total shows a placement.
 local function held_count(player, cursor, item)
   local held = cursor.valid_for_read and cursor.name == item and cursor.count or 0
@@ -99,7 +156,9 @@ local function place_one(player, cursor, item, entity, position, direction)
   end
   if not player.can_build_from_cursor {position = position, direction = direction} then
     restore_cursor(player)
-    return "the item cannot be built at that position"
+    local reason = obstruction(player, entity, position, direction)
+    return "the item cannot be built at " .. common.offset_text(player.position, position)
+      .. (reason and ": " .. reason or "")
   end
   local before = held_count(player, cursor, item)
   player.build_from_cursor {position = position, direction = direction}
@@ -303,17 +362,45 @@ function handlers.insert(params)
   return {entity = name, item = item, requested = count, inserted = inserted}
 end
 
+-- An empty item takes everything the entity holds.
 function handlers.take(params)
   local player = common.get_player(params)
-  local item = ids.check(common.required_string(params, "item"), "item")
-  local count = math.max(1, math.floor(common.required_number(params, "count")))
-  local name, entity = reachable_entity(player, params)
-  local removed = entity.remove_item {name = item, count = count}
-  local inserted = player.get_main_inventory().insert {name = item, count = removed}
-  if inserted < removed then
-    entity.insert {name = item, count = removed - inserted}
+  local item = params.item or ""
+  local wanted = {}
+  if item ~= "" then
+    wanted[ids.check(item, "item")] = math.max(1, math.floor(common.required_number(params, "count")))
   end
-  return {entity = name, item = item, requested = count, taken = inserted}
+  local name, entity = reachable_entity(player, params)
+  local taken = {}
+  if entity.type == "item-entity" then
+    local stack = entity.stack
+    if item ~= "" and stack.name ~= item then
+      common.fail("that " .. name .. " is " .. stack.name)
+    end
+    local picked, count = stack.name, stack.count
+    if not player.mine_entity(entity) then
+      common.fail("could not pick up the " .. picked)
+    end
+    taken[picked] = count
+    return {entity = name, taken = taken}
+  end
+  if item == "" then
+    wanted = entities.contents(entity)
+  end
+  local inventory = player.get_main_inventory()
+  for wanted_item, count in pairs(wanted) do
+    local removed = entity.remove_item {name = wanted_item, count = count}
+    if removed > 0 then
+      local inserted = inventory.insert {name = wanted_item, count = removed}
+      if inserted < removed then
+        entity.insert {name = wanted_item, count = removed - inserted}
+      end
+      if inserted > 0 then
+        taken[wanted_item] = inserted
+      end
+    end
+  end
+  return {entity = name, taken = taken}
 end
 
 return {handlers = handlers}

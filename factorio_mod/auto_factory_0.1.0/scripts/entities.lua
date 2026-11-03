@@ -52,26 +52,41 @@ function entities.amount(entity)
   return total
 end
 
+local FIND_RADIUS = 0.8
+local NEARBY_RADIUS = 32
+local NEARBY_LISTED = 5
+
 function entities.find(player, name, position)
-  local candidates = player.surface.find_entities_filtered {
+  local surface = player.surface
+  ids.check(name, "entity")
+  local candidates = surface.find_entities_filtered {
     position = position,
-    radius = 0.8,
-    name = ids.check(name, "entity"),
-    limit = 10,
+    radius = FIND_RADIUS,
+    name = name,
   }
-  local closest = nil
-  local closest_distance = nil
-  for _, entity in pairs(candidates) do
-    local distance = common.distance_squared(position, entity.position)
-    if closest_distance == nil or distance < closest_distance then
-      closest = entity
-      closest_distance = distance
-    end
+  -- Large footprints reach further than FIND_RADIUS from their centre.
+  if #candidates == 0 then
+    candidates = surface.find_entities_filtered {position = position, name = name}
   end
-  if not closest then
-    common.fail("no " .. name .. " found near the requested position")
+  if #candidates > 0 then
+    return common.nearest_first(candidates, position)[1]
   end
-  return closest
+  local requested = common.offset_text(player.position, position)
+  local nearby = common.nearest_first(
+    surface.find_entities_filtered {position = position, radius = NEARBY_RADIUS, name = name},
+    position
+  )
+  if #nearby == 0 then
+    common.fail(
+      "no " .. name .. " within " .. NEARBY_RADIUS .. " tiles of " .. requested
+        .. "; api_find searches further"
+    )
+  end
+  local offsets = {}
+  for index = 1, math.min(NEARBY_LISTED, #nearby) do
+    table.insert(offsets, common.offset_text(player.position, nearby[index].position))
+  end
+  common.fail("no " .. name .. " at " .. requested .. "; nearest: " .. table.concat(offsets, ", "))
 end
 
 function entities.entry(entity, origin)
@@ -92,6 +107,13 @@ function entities.entry(entity, origin)
   local contents = entities.contents(entity)
   if next(contents) then
     entry.items = contents
+  end
+  local fluids_ok, fluids = pcall(entity.get_fluid_contents)
+  if fluids_ok and next(fluids) then
+    entry.fluids = {}
+    for fluid, amount in pairs(fluids) do
+      entry.fluids[fluid] = common.rounded(amount)
+    end
   end
   local recipe_ok, recipe = pcall(entity.get_recipe)
   if recipe_ok and recipe then

@@ -148,7 +148,8 @@ DESKTOP_TOOLS = [
 API_TOOLS = [
     _tool(
         "api_scan",
-        "Read structured player, inventory, resource, and entity state around the player.",
+        "Read structured player, inventory, resource, and entity state around the "
+        "player, including the items and fluids each entity holds.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],
@@ -308,14 +309,24 @@ API_TOOLS = [
     ),
     _tool(
         "api_take",
-        "Move items from a reachable entity into the player inventory.",
+        "Move items from a reachable entity into the player inventory, or pick up an "
+        "item-on-ground. Returns the count taken per item.",
         _object_schema(
             {
                 "entity": {"type": "string"},
                 "dx": OFFSET,
                 "dy": OFFSET,
-                "item": {"type": "string"},
-                "count": {"type": "integer", "minimum": 1, "maximum": 10000},
+                "item": {
+                    "type": "string",
+                    "description": "Empty takes everything the entity holds, fuel "
+                    "and ingredients included.",
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000,
+                    "description": "Ignored when item is empty.",
+                },
             },
             ["entity", "dx", "dy", "item", "count"],
         ),

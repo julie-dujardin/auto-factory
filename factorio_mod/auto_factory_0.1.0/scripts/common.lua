@@ -99,4 +99,16 @@ function common.offset_from(origin, position)
   }
 end
 
+function common.offset_text(origin, position)
+  local offset = common.offset_from(origin, position)
+  return "dx=" .. offset.dx .. " dy=" .. offset.dy
+end
+
+function common.nearest_first(list, position)
+  table.sort(list, function(a, b)
+    return common.distance_squared(position, a.position) < common.distance_squared(position, b.position)
+  end)
+  return list
+end
+
 return common
