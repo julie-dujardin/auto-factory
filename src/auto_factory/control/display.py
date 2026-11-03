@@ -139,12 +139,18 @@ def stop(process: subprocess.Popen) -> None:
 
 
 def run_game(
-    factorio: Path, config: Path, environment: dict[str, str], banner: str
+    factorio: Path,
+    config: Path,
+    environment: dict[str, str],
+    banner: str,
+    arguments: tuple[str, ...] = (),
 ) -> int:
     environment.setdefault("SteamAppId", "427520")
     environment.setdefault("SteamGameId", "427520")
     print(banner, flush=True)
-    game = subprocess.Popen([str(factorio), "--config", str(config)], env=environment)
+    game = subprocess.Popen(
+        [str(factorio), "--config", str(config), *arguments], env=environment
+    )
     try:
         return game.wait()
     finally:
@@ -184,6 +190,9 @@ def run_isolated(factorio: Path, config: Path) -> int:
             os.environ | {"DISPLAY": display, "SDL_VIDEODRIVER": "x11"},
             f"Factorio is isolated on DISPLAY={display}. In another terminal run:\n"
             "  uv run auto-factory 'your task'",
+            # The nested display has no window manager to honour fullscreen,
+            # so Factorio would open a smaller window and leave black bars.
+            ("--window-size", size),
         )
     finally:
         stop(xwayland)

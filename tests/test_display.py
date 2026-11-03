@@ -119,3 +119,31 @@ def test_macos_runs_factorio_without_xwayland(
     [(command, environment)] = launched
     assert command[:2] == [str(binary), "--config"]
     assert environment["SteamAppId"] == "427520"
+
+
+def test_isolated_factorio_fills_the_nested_display(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AUTO_FACTORY_SIZE", "1280x720")
+    monkeypatch.setattr(display.shutil, "which", lambda _: "/usr/bin/Xwayland")
+    monkeypatch.setattr(display, "display_socket", lambda _: tmp_path / "X99")
+    monkeypatch.setattr(display, "wait_for_display", lambda *_: None)
+    launched: list[list[str]] = []
+
+    class Process:
+        def __init__(self, command: list[str], env: dict | None = None) -> None:
+            launched.append(command)
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def poll(self) -> int:
+            return 0
+
+    monkeypatch.setattr(display.subprocess, "Popen", Process)
+
+    assert display.run_isolated(tmp_path / "factorio", tmp_path / "config.ini") == 0
+
+    [xwayland, game] = launched
+    assert xwayland[xwayland.index("-geometry") + 1] == "1280x720"
+    assert game[game.index("--window-size") + 1] == "1280x720"
