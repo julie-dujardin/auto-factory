@@ -122,6 +122,7 @@ function handlers.observe(params)
     radius = radius,
     resources = resources,
     entities = nearby_entries,
+    omitted = #candidates - #nearby_entries,
   }
 end
 

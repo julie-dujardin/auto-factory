@@ -150,7 +150,7 @@ API_TOOLS = [
         "api_scan",
         "Read structured player, inventory, resource, and entity state around the "
         "player, including the items and fluids each entity holds, listing the 100 "
-        "nearest entities. Straight transport belt runs are one entry: position is "
+        "nearest entities; omitted counts those beyond the cut. Straight transport belt runs are one entry: position is "
         "the upstream tile and the run covers length tiles toward direction. Belts "
         "give each lane's item, its count, and flow in items per second; 0 means the "
         "lane is stopped. Underground belts say whether they are the input or output "
