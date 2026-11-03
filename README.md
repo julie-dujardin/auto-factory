@@ -29,3 +29,15 @@ Set your objective:
 ```bash
 uv run --env-file .env auto-factory --control mixed "launch 10 rockets per minute"
 ```
+
+## Call tools by hand
+
+`auto-factory-tool` sends one API tool call over RCON, exactly as the agent would, and prints the result:
+
+```bash
+uv run --env-file .env auto-factory-tool find --name ore --radius 50 --sort distance --limit 5
+uv run --env-file .env auto-factory-tool walk_to --dx 10 --dy -4
+uv run --env-file .env auto-factory-tool api_place '{"item": "stone-furnace", "dx": 2, "dy": 0, "direction": "north", "count": 1, "line_direction": "east"}'
+```
+
+Tools take their short (`find`) or full (`api_find`) name. Arguments come as flags, as a JSON object copied from a trace, or both (flags win); omitted text fields are sent empty. `auto-factory-tool <tool> --help` lists a tool's arguments.

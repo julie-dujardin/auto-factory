@@ -28,6 +28,7 @@ dev = [
 [project.scripts]
 auto-factory = "auto_factory.harness.cli:main"
 auto-factory-game = "auto_factory.control.display:main"
+auto-factory-tool = "auto_factory.harness.tool_cli:main"
 
 [tool.ruff]
 target-version = "py314"

@@ -61,6 +61,8 @@ one api_take per full furnace in reach, or api_walk_to then api_place. They run 
 order; the chain stops after an error, a blocked walk, a partial placement,
 complete_task, or fail_task, and skips the calls after it. Use the next observations
 to verify the chain's effect.
+
+When placing an inserter, it picks from the set direction, towards the oposite one.
 """
 
 
