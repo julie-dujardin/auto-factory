@@ -214,9 +214,13 @@ def test_recipe_forwards_item() -> None:
     raw = FakeRcon({"item": "iron-plate", "recipes": {}, "mining": {}})
     api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
 
-    api.execute("api_recipe", {"item": "iron-plate"})
+    api.execute("api_recipe", {"item": "iron-plate", "include_locked": True})
     request = json.loads(raw.commands[0].removeprefix("/af "))
-    assert request == {"id": 1, "method": "recipe", "params": {"item": "iron-plate"}}
+    assert request == {
+        "id": 1,
+        "method": "recipe",
+        "params": {"item": "iron-plate", "include_locked": True},
+    }
 
 
 def test_entity_info_forwards_entity() -> None:

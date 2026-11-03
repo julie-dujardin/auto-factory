@@ -111,36 +111,44 @@ local function machines_for(character)
   return crafters, miners
 end
 
-local function recipes_making(name, force, crafters, craftable)
+-- Without include_locked, locked recipes keep only the technologies that unlock them,
+-- and one no technology unlocks is dropped.
+local function recipes_making(name, force, crafters, craftable, include_locked)
   local recipes = {}
+  local locked = {}
   for recipe_name, recipe in pairs(prototypes.recipe) do
     local made = amounts(recipe.products)[name]
     -- Emptying a barrel only returns fluid that was already made elsewhere.
     if made and not recipe.hidden and recipe.subgroup.name ~= "empty-barrel" then
-      local machines = {}
-      for _, prototype in pairs(crafters) do
-        if runs_recipe(prototype, recipe) then
-          machines[machine_key(prototype)] = machine_entry(
-            prototype, craftable, prototype.get_crafting_speed(), recipe.energy, made
-          )
+      local unlocked = force.recipes[recipe_name].enabled
+      local technologies = unlocked and {} or unlocking_technologies(recipe_name)
+      if unlocked or include_locked then
+        local machines = {}
+        for _, prototype in pairs(crafters) do
+          if runs_recipe(prototype, recipe) then
+            machines[machine_key(prototype)] = machine_entry(
+              prototype, craftable, prototype.get_crafting_speed(), recipe.energy, made
+            )
+          end
         end
+        local entry = {
+          categories = recipe.categories,
+          seconds = rounded(recipe.energy),
+          ingredients = amounts(recipe.ingredients),
+          products = amounts(recipe.products),
+          machines = machines,
+        }
+        if include_locked then
+          entry.unlocked = unlocked
+          entry.unlocked_by = #technologies > 0 and technologies or nil
+        end
+        recipes[recipe_name] = entry
+      elseif #technologies > 0 then
+        locked[recipe_name] = technologies
       end
-      local entry = {
-        unlocked = force.recipes[recipe_name].enabled,
-        categories = recipe.categories,
-        seconds = rounded(recipe.energy),
-        ingredients = amounts(recipe.ingredients),
-        products = amounts(recipe.products),
-        machines = machines,
-      }
-      local technologies = not entry.unlocked and unlocking_technologies(recipe_name)
-      if technologies and #technologies > 0 then
-        entry.unlocked_by = technologies
-      end
-      recipes[recipe_name] = entry
     end
   end
-  return recipes
+  return recipes, locked
 end
 
 local function resources_yielding(name, miners, craftable)
@@ -175,12 +183,14 @@ function handlers.recipe(params)
   local force = player.force
   local craftable = craftable_items(force)
   local crafters, miners = machines_for(player.character.prototype)
-  local recipes = recipes_making(name, force, crafters, craftable)
+  local recipes, locked = recipes_making(
+    name, force, crafters, craftable, params.include_locked == true
+  )
   local mining = resources_yielding(name, miners, craftable)
-  if next(recipes) == nil and next(mining) == nil then
+  if next(recipes) == nil and next(locked) == nil and next(mining) == nil then
     common.fail("nothing makes " .. name)
   end
-  return {item = name, recipes = recipes, mining = mining}
+  return {item = name, recipes = recipes, locked = next(locked) and locked or nil, mining = mining}
 end
 
 return {handlers = handlers, power_needs = power_needs, runs_recipe = runs_recipe}
