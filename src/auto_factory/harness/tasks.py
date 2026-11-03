@@ -33,11 +33,13 @@ class Task:
 
 
 class TaskTree:
-    """The agent's plan: tasks run depth-first, and closing one moves to the next."""
+    """The agent's plan: tasks run depth-first, and closing one moves to the next.
+    Notes are the agent's free-form working memory beside them."""
 
     def __init__(self, goal: str) -> None:
         self.root = Task("goal", goal, "the goal is achieved")
         self._current: Task | None = self.root
+        self.notes = ""
 
     @property
     def current(self) -> Task:
@@ -55,6 +57,9 @@ class TaskTree:
         return result if self.root.status == "done" else f"Failed: {result}"
 
     def handle(self, name: str, arguments: dict[str, Any]) -> str:
+        if name == "notes":
+            self.notes = str(arguments["text"])
+            return "ok; notes saved"
         if name == "add_tasks":
             return self.add_tasks(arguments["tasks"])
         if name == "propose_approaches":
@@ -140,15 +145,7 @@ class TaskTree:
             self._render(child, "", lines)
         if self._current is not None:
             lines.append(f"Current task: {self.current.label}")
-            if self.current.approach is None:
-                lines.append(
-                    "It has no approach: inspect the game with api_scan, "
-                    "api_find, and api_resources, look up recipes, entities, "
-                    "technologies, and IDs with api_recipe, api_entity_info, "
-                    "api_technology, and api_search, then "
-                    "call add_tasks or propose_approaches before using other game "
-                    "tools."
-                )
+        lines.append(f"Notes:\n{self.notes}" if self.notes else "Notes: none yet")
         return "\n".join(lines)
 
     def _render(self, task: Task, indent: str, lines: list[str]) -> None:

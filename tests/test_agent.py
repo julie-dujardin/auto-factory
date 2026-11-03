@@ -190,23 +190,7 @@ def test_call_cut_off_by_output_limit_does_not_run() -> None:
     }
 
 
-def test_game_tools_need_an_approach() -> None:
-    completions = FakeCompletions(
-        [
-            FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
-            FakeCall("fail_task", '{"reason":"gave up"}'),
-        ]
-    )
-    computer = FakeComputer()
-
-    assert computer_agent(completions, computer).run("move") == "Failed: gave up"
-    assert computer.actions == []
-    assert completions.requests[1]["messages"][-3]["content"].startswith(
-        "error: the goal has no approach yet"
-    )
-
-
-def test_lookups_need_no_approach() -> None:
+def test_game_tools_need_no_approach() -> None:
     completions = FakeCompletions(
         [
             [
@@ -235,10 +219,8 @@ def test_lookups_need_no_approach() -> None:
         ("api_find", json.loads(FIND)),
         ("api_search", {"query": "gear", "kind": "item"}),
         ("api_recipe", {"item": "iron-gear-wheel"}),
+        ("api_craft", {"recipe": "iron-gear-wheel", "count": 1}),
     ]
-    assert completions.requests[1]["messages"][-3]["content"].startswith(
-        "error: the goal has no approach yet"
-    )
 
 
 def test_closing_a_task_drops_its_steps() -> None:
@@ -263,11 +245,26 @@ def test_closing_a_task_drops_its_steps() -> None:
     assert "[x] 1. walk -> walked north" in last[-1]["content"]
 
 
+def test_notes_outlive_closed_tasks() -> None:
+    completions = FakeCompletions(
+        [
+            FakeCall("add_tasks", '{"tasks":[{"title":"walk","done_when":"moved"}]}'),
+            FakeCall("notes", '{"text":"drill #7 at 3,4"}'),
+            FakeCall("complete_task", '{"result":"walked north"}'),
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+
+    assert computer_agent(completions, FakeComputer()).run("move") == "done"
+    tasks = completions.requests[-2]["messages"][-1]["content"]
+    assert tasks.endswith("Notes:\ndrill #7 at 3,4\n</tasks>")
+
+
 def test_chain_stops_at_first_error() -> None:
     completions = FakeCompletions(
         [
             [
-                FakeCall("game_action", '{"action":"move_up","duration":0.5}'),
+                FakeCall("game_action", '{"action":'),
                 FakeCall("wait", '{"seconds":1}', "call-2"),
             ],
             FakeCall("fail_task", '{"reason":"gave up"}'),

@@ -84,10 +84,14 @@ def test_render_marks_current_and_collapses_closed_tasks() -> None:
             "    [x] 1.1. coal -> coal at 3,4",
             "[ ] 2. lab (done when: lab works)",
             "Current task: 1. fuel",
-            "It has no approach: inspect the game with api_scan, api_find, and "
-            "api_resources, "
-            "look up recipes, entities, technologies, and IDs with api_recipe, "
-            "api_entity_info, api_technology, and api_search, then call add_tasks or "
-            "propose_approaches before using other game tools.",
+            "Notes: none yet",
         ]
     )
+
+
+def test_notes_are_replaced_and_rendered() -> None:
+    tree = TaskTree("goal")
+    tree.handle("notes", {"text": "drill #7 at 3,4"})
+    tree.handle("notes", {"text": "drill #7 at 3,4\nchest #9 at 5,4"})
+
+    assert tree.render().endswith("Notes:\ndrill #7 at 3,4\nchest #9 at 5,4")

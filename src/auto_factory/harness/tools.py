@@ -78,7 +78,7 @@ DESKTOP_TOOLS = [
         "Type text into the currently focused Factorio field.",
         _object_schema(
             {
-                "text": {"type": "string", "maxLength": 500},
+                "text": {"type": "string"},
                 "interval": {
                     "type": "number",
                     "minimum": 0,
@@ -626,9 +626,25 @@ MIXED_TOOLS = [
 ]
 
 
-TASK_TEXT = {"type": "string", "maxLength": 2000}
-
+# The model server enforces maxLength by cutting text mid-word, sometimes then padding
+# whitespace up to the output limit, so text fields only ask for brevity.
 TASK_TOOLS = [
+    _tool(
+        "notes",
+        "Replace your notes, which every observation shows and closing a task keeps. "
+        "Send the whole text each time; keep it short.",
+        _object_schema(
+            {
+                "text": {
+                    "type": "string",
+                    "description": "Your current plan, what you decided while "
+                    "thinking, and what you built where, with ids and world "
+                    "positions.",
+                }
+            },
+            ["text"],
+        ),
+    ),
     _tool(
         "add_tasks",
         "Split the current task into ordered subtasks. The first one becomes current.",
@@ -640,12 +656,14 @@ TASK_TOOLS = [
                     "maxItems": 8,
                     "items": _object_schema(
                         {
-                            "title": {"type": "string", "maxLength": 200},
+                            "title": {
+                                "type": "string",
+                                "description": "A few words.",
+                            },
                             "done_when": {
                                 "type": "string",
-                                "maxLength": 300,
                                 "description": "A condition you can check in the "
-                                "observations.",
+                                "observations, in one sentence.",
                             },
                         },
                         ["title", "done_when"],
@@ -665,12 +683,15 @@ TASK_TOOLS = [
                     "type": "array",
                     "minItems": 2,
                     "maxItems": 4,
-                    "items": {"type": "string", "maxLength": 300},
+                    "items": {
+                        "type": "string",
+                        "description": "One or two sentences.",
+                    },
                 },
                 "reason": {
                     "type": "string",
-                    "maxLength": 500,
-                    "description": "Why the first approach fits the goal best.",
+                    "description": "Why the first approach fits the goal best, "
+                    "briefly.",
                 },
             },
             ["approaches", "reason"],
@@ -681,10 +702,10 @@ TASK_TOOLS = [
         "Close the current task once its done_when holds. Its steps leave your context.",
         _object_schema(
             {
-                "result": TASK_TEXT
-                | {
+                "result": {
+                    "type": "string",
                     "description": "What was achieved, with the locations and facts "
-                    "later tasks need."
+                    "later tasks need. Keep it short.",
                 }
             },
             ["result"],
@@ -696,24 +717,16 @@ TASK_TOOLS = [
         "task replans. Its steps leave your context.",
         _object_schema(
             {
-                "reason": TASK_TEXT
-                | {"description": "Why it failed and what was learned."}
+                "reason": {
+                    "type": "string",
+                    "description": "Why it failed and what was learned, briefly.",
+                }
             },
             ["reason"],
         ),
     ),
 ]
 TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
-# Read-only lookups that inform planning, so they run before the task has an approach.
-LOOKUP_TOOL_NAMES = {
-    "api_scan",
-    "api_find",
-    "api_resources",
-    "api_recipe",
-    "api_entity_info",
-    "api_search",
-    "api_technology",
-}
 
 
 def _feedback_tool(tool_names: list[str]) -> dict[str, Any]:
@@ -751,19 +764,16 @@ def _feedback_tool(tool_names: list[str]) -> dict[str, Any]:
                 },
                 "summary": {
                     "type": "string",
-                    "maxLength": 200,
                     "description": "One line naming the problem.",
                 },
                 "expected": {
                     "type": "string",
-                    "maxLength": 500,
-                    "description": "What you needed or expected.",
+                    "description": "What you needed or expected, briefly.",
                 },
                 "observed": {
                     "type": "string",
-                    "maxLength": 500,
                     "description": "What happened or was available instead, quoting "
-                    "the call and result when there is one.",
+                    "the call and result when there is one. Keep it short.",
                 },
                 "impact": {
                     "type": "string",
@@ -771,8 +781,7 @@ def _feedback_tool(tool_names: list[str]) -> dict[str, Any]:
                 },
                 "workaround": {
                     "type": "string",
-                    "maxLength": 300,
-                    "description": "How you got past it, if you did.",
+                    "description": "How you got past it, if you did, briefly.",
                 },
             },
             ["category", "summary", "expected", "observed", "impact"],

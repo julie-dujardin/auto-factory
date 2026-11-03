@@ -11,7 +11,6 @@ from ..control.computer import Computer, Screen, Screenshot
 from ..control.factorio import FactorioAPI
 from .tasks import Task, TaskTree
 from .tools import (
-    LOOKUP_TOOL_NAMES,
     TASK_TOOL_NAMES,
     ControlMode,
     execute_tool,
@@ -56,18 +55,15 @@ Never guess an ID either. When unsure of the exact name of an item, fluid, recip
 entity, entity type, technology, or entity status, find it with api_search. An error
 for an unknown ID lists similar IDs: pick from them or search, never retry a variant.
 
-api_scan, api_find, api_resources, api_recipe, api_entity_info, api_search, and
-api_technology only read, so they work at any time, even before the current task has
-an approach.
-
-Plan with the task tools before acting. Split the goal into ordered tasks with
-add_tasks. For the current task, either split it further or, once it is concrete, call
-propose_approaches with genuinely different ways to do it, ranked against the goal's
-constraints. Other game tools only run while the current task has an approach. Call
-complete_task when its done_when holds, recording the locations and facts later tasks
-need: a closed task's steps are removed from your context. Call fail_task when an
-approach does not work, saying what you learned. Completing or failing the goal ends
-the run.
+Your thinking is not shown to you again, so keep your plan in notes: whenever thinking
+settles a plan, a layout, or a fix, write it with notes in the same turn as your first
+action on it, and record what you built where, with ids and world positions.
+For a goal with several stages, split it into ordered tasks with add_tasks; a simple
+goal needs none. propose_approaches gives the current task fallbacks that fail_task
+moves to in order. Call complete_task when its done_when holds, recording the
+locations and facts later tasks need: a closed task's steps are removed from your
+context. Call fail_task when an approach does not work, saying what you learned.
+Completing or failing the goal ends the run.
 
 Every turn is slow: return every tool call you can already decide in one turn, e.g.
 one api_take per full furnace in reach, or api_walk_to then api_place. They run in
@@ -76,8 +72,8 @@ complete_task, or fail_task, and skips the calls after it. Use the next observat
 to verify the chain's effect.
 
 Keep each turn's thinking short: a turn that thinks too long is cut off before it
-calls a tool. When a plan grows long, record what you have decided with add_tasks and
-work out each task in its own turn.
+calls a tool. When a plan grows long, record what you have decided with notes and work
+out each part in its own turn.
 
 When a tool is missing, broken, or misleading, when you cannot see something you need,
 or when the planning loop gets in your way, report it with feedback alongside your next
@@ -117,7 +113,7 @@ CUT_OFF_WARNING = {
     "role": "user",
     "content": "Your last turn hit the output limit while thinking, before it called "
     "a tool, and its thinking is lost. Think less per turn: record what you have "
-    "decided with add_tasks, then work out one task at a time.",
+    "decided with notes, then work out one part at a time.",
 }
 CUT_OFF_CALL = (
     "error: the output limit cut this call off while you wrote its arguments, so it "
@@ -464,9 +460,4 @@ class FactorioAgent:
     def _execute(self, tasks: TaskTree, name: str, arguments: dict[str, Any]) -> str:
         if name in TASK_TOOL_NAMES:
             return tasks.handle(name, arguments)
-        if tasks.current.approach is None and name not in LOOKUP_TOOL_NAMES:
-            raise ValueError(
-                f"{tasks.current.label} has no approach yet; call add_tasks or "
-                "propose_approaches first"
-            )
         return execute_tool(self._computer, self._factorio, name, arguments)
