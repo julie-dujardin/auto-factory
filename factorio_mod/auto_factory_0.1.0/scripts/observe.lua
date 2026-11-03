@@ -58,7 +58,11 @@ function handlers.observe(params)
   local origin = common.origin(player)
   local transport_belts = {}
   local candidates = {}
+  local scanned = {}
   for _, entity in pairs(nearby) do
+    if entity.unit_number then
+      scanned[entity.unit_number] = true
+    end
     if entity.type == "transport-belt" then
       table.insert(transport_belts, entity)
     elseif listed(entity) then
@@ -68,7 +72,7 @@ function handlers.observe(params)
       })
     end
   end
-  for _, run in pairs(belts.runs(transport_belts, origin)) do
+  for _, run in pairs(belts.runs(transport_belts, origin, scanned)) do
     run.entry.id = entities.id(run.head)
     table.insert(candidates, run)
   end

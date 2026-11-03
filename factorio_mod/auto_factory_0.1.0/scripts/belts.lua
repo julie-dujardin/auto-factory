@@ -105,7 +105,8 @@ end
 -- Transport belts as one entry per straight run: consecutive tiles with the same name
 -- and direction, split where a lane's item changes. Each entry comes with its upstream
 -- belt as head and the squared distance from origin to the run's nearest belt.
-function belts.runs(transport_belts, origin)
+-- scanned holds the unit numbers of every entity in the scan, belts or not.
+function belts.runs(transport_belts, origin, scanned)
   local at = {}
   local measured = {}
   for _, belt in pairs(transport_belts) do
@@ -123,7 +124,9 @@ function belts.runs(transport_belts, origin)
   end
 
   local function start(head)
-    local run = {head = head, length = 0, items = {}, distance = math.huge, sides = {}}
+    local run = {
+      head = head, length = 0, items = {}, distance = math.huge, sides = {}, beyond = {},
+    }
     for side = 1, 2 do
       run.sides[side] = {counts = {}, moving = 0, length = 0}
     end
@@ -152,11 +155,25 @@ function belts.runs(transport_belts, origin)
       into.length = into.length + from.length
       run.items[side] = run.items[side] or most_common(from.counts)
     end
+    local neighbours = belt.belt_neighbours
+    for key, others in pairs({upstream = neighbours.inputs, downstream = neighbours.outputs}) do
+      for _, other in pairs(others) do
+        if not scanned[other.unit_number] then
+          run.beyond[key] = true
+        end
+      end
+    end
   end
 
   local results = {}
   local function finish(run)
     local head = run.head
+    local beyond = {}
+    for _, key in ipairs({"upstream", "downstream"}) do
+      if run.beyond[key] then
+        table.insert(beyond, key)
+      end
+    end
     table.insert(results, {
       head = head,
       distance = run.distance,
@@ -167,6 +184,7 @@ function belts.runs(transport_belts, origin)
         direction = common.DIRECTION_NAMES[head.direction],
         length = run.length,
         lanes = lanes(run.sides, head.prototype.belt_speed * 60),
+        beyond_scan = #beyond > 0 and beyond or nil,
       },
     })
   end
