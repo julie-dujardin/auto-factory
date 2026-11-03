@@ -110,10 +110,17 @@ class FakeComputer:
         self.actions.append(("wait", (seconds,)))
 
 
+CAMERA = {
+    "centre": {"dx": 0.2, "dy": -0.4},
+    "zoom": 1,
+    "resolution": {"width": 1920, "height": 1088},
+}
+
+
 class FakeFactorio:
     def __init__(self, results: dict[str, Any] | None = None) -> None:
         self.actions: list[tuple[str, dict[str, object]]] = []
-        self.results = results or {}
+        self.results = {"camera": CAMERA} | (results or {})
 
     def observe(self, radius: float) -> dict[str, object]:
         return {"radius": radius, "player": {"world_position": {"x": 1, "y": 2}}}
@@ -546,7 +553,14 @@ def test_screen_only_mixed_agent_watches_and_acts_through_api() -> None:
     assert "api_craft" in names
     assert names.isdisjoint({"game_action", "drag_build"})
     assert "API tools to act" in request["messages"][0]["content"]
-    assert any(isinstance(message["content"], list) for message in request["messages"])
+    screenshots = [
+        message["content"]
+        for message in request["messages"]
+        if isinstance(message["content"], list)
+    ]
+    assert screenshots[0][0]["text"] == (
+        "<observation>\nThe game view spans dx -29.8 to 30.2 and dy -17.4 to 16.6.\n"
+    )
 
 
 DRAG_PLAN = {
@@ -587,7 +601,10 @@ def test_mixed_agent_drags_between_tile_centres() -> None:
         ("drag", (525, 507, 592, 507, "left", 0.25)),
         ("wait", (0.25,)),
     ]
-    assert factorio.actions == [("drag_prepare", arguments), ("drag_finish", {})]
+    assert [action for action in factorio.actions if action[0] != "camera"] == [
+        ("drag_prepare", arguments),
+        ("drag_finish", {}),
+    ]
     assert {
         "role": "tool",
         "tool_call_id": "call-1",
@@ -660,12 +677,7 @@ def test_trim_images_keeps_latest() -> None:
 
     trim_images(messages)
 
-    assert messages[0]["content"][1] == {
-        "type": "text",
-        "text": "[screenshot evicted]",
-    }
-    assert messages[1]["content"][1] == {
-        "type": "text",
-        "text": "[screenshot evicted]",
-    }
+    evicted = "<observation>\n[screenshot evicted]\n</observation>"
+    assert messages[0]["content"] == evicted
+    assert messages[1]["content"] == evicted
     assert messages[2]["content"][1]["type"] == "image_url"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from .computer import NORMALIZED_SCREEN_SIZE, Computer, Screenshot
 from .factorio import FactorioAPI
@@ -24,6 +25,18 @@ def _screen_point(
         round(x / screen.width * NORMALIZED_SCREEN_SIZE),
         round(y / screen.height * NORMALIZED_SCREEN_SIZE),
     )
+
+
+def visible_offsets(camera: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    """The dx and dy ranges of the game view, from the mod's camera method."""
+    scale = TILE_PIXELS * camera["zoom"]
+    half_dx = camera["resolution"]["width"] / 2 / scale
+    half_dy = camera["resolution"]["height"] / 2 / scale
+    dx, dy = camera["centre"]["dx"], camera["centre"]["dy"]
+    return {
+        "dx": (round(dx - half_dx, 1), round(dx + half_dx, 1)),
+        "dy": (round(dy - half_dy, 1), round(dy + half_dy, 1)),
+    }
 
 
 def drag_build(

@@ -8,6 +8,7 @@ from typing import Any, Literal
 from langfuse import get_client
 
 from ..control.computer import Computer, Screen, Screenshot
+from ..control.drag import visible_offsets
 from ..control.factorio import FactorioAPI
 from .tasks import Task, TaskTree
 from .tools import (
@@ -142,12 +143,21 @@ def look_back_prompt(outcome: str, reports: list[str]) -> dict[str, str]:
     }
 
 
-def observation(screenshot: Screenshot) -> dict[str, Any]:
+def observation(
+    screenshot: Screenshot, camera: dict[str, Any] | None = None
+) -> dict[str, Any]:
     encoded = base64.b64encode(screenshot.png).decode("ascii")
+    header = "<observation>\n"
+    if camera is not None:
+        offsets = visible_offsets(camera)
+        (left, right), (top, bottom) = offsets["dx"], offsets["dy"]
+        header += (
+            f"The game view spans dx {left} to {right} and dy {top} to {bottom}.\n"
+        )
     return {
         "role": "user",
         "content": [
-            {"type": "text", "text": "<observation>\n"},
+            {"type": "text", "text": header},
             {
                 "type": "image_url",
                 "image_url": {"url": f"data:image/png;base64,{encoded}"},
@@ -172,13 +182,9 @@ def trim_images(messages: list[dict[str, Any]], keep: int = 1) -> None:
         content = message.get("content")
         if message.get("role") != "user" or not isinstance(content, list):
             continue
-        for part in content:
-            if part.get("type") != "image_url":
-                continue
-            seen += 1
-            if seen > keep:
-                part.clear()
-                part.update({"type": "text", "text": "[screenshot evicted]"})
+        seen += 1
+        if seen > keep:
+            message["content"] = "<observation>\n[screenshot evicted]\n</observation>"
 
 
 def tasks_observation(tasks: TaskTree) -> dict[str, str]:
@@ -305,7 +311,12 @@ class FactorioAgent:
         for step in range(1, self._max_steps + 1):
             starts.setdefault(tasks.current, len(messages))
             if self._screen is not None:
-                messages.append(observation(self._screen.screenshot()))
+                camera = (
+                    None
+                    if self._factorio is None
+                    else self._factorio.call("camera", {})
+                )
+                messages.append(observation(self._screen.screenshot(), camera))
             if self._factorio is not None:
                 state = self._factorio.observe(self._observation_radius)
                 messages.append(game_state_observation(state))

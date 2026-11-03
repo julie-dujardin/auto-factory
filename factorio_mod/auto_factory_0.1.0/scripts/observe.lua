@@ -215,4 +215,14 @@ function handlers.find(params)
   }
 end
 
+-- The camera centres on the player's exact position, off the origin tile's centre.
+function handlers.camera(params)
+  local player = common.get_player(params)
+  return {
+    centre = common.offset_from(common.origin(player), player.position),
+    zoom = player.zoom,
+    resolution = player.display_resolution,
+  }
+end
+
 return {handlers = handlers}
