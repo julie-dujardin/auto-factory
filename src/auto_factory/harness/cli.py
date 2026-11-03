@@ -100,6 +100,13 @@ def main() -> None:
     control: ControlMode = args.control
     computer: Computer | None = None
     if control in {"computer", "mixed"}:
+        if sys.platform == "darwin":
+            print(
+                "Computer control needs an isolated display, which macOS lacks; "
+                "use --control api.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
         display = os.environ.get("AUTO_FACTORY_DISPLAY", ":99")
         computer = DesktopComputer(display)
 

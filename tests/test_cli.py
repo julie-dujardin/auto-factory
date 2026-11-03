@@ -1,3 +1,6 @@
+import pytest
+
+from auto_factory.harness import cli
 from auto_factory.harness.cli import score_research
 
 
@@ -41,3 +44,16 @@ def test_unreachable_game_skips_score(capsys) -> None:
 
     assert episode.scores == []
     assert "Could not score research" in capsys.readouterr().err
+
+
+def test_macos_rejects_computer_control(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    monkeypatch.setattr(cli.sys, "argv", ["auto-factory", "--control", "computer", "x"])
+    monkeypatch.setenv("OPENAI_API_KEY", "key")
+    monkeypatch.setenv("MODEL_NAME", "model")
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+
+    assert exit_info.value.code == 2
+    assert "--control api" in capsys.readouterr().err
