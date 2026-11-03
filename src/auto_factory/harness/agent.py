@@ -62,7 +62,22 @@ order; the chain stops after an error, a blocked walk, a partial placement,
 complete_task, or fail_task, and skips the calls after it. Use the next observations
 to verify the chain's effect.
 
-When placing an inserter, it picks from the set direction, towards the oposite one.
+A splitter is 2 tiles wide across the flow and 1 long; give api_place the point
+between its two tiles. It splits the items entering its back evenly between the two
+tiles in front, keeping each item on its lane, and sends everything to one side when
+the other backs up. Placed over one belt and a free tile, it branches that belt from
+the free half; placed over two belts, it mixes their items. Splitters and underground
+belts can be placed over existing belts, which return to the inventory.
+
+An underground belt pair carries a belt under anything, with up to 4 tiles between
+its ends (6 fast, 8 express, 10 turbo). Place the entrance before the obstacle and the
+exit after it with separate api_place calls, both facing the flow: the second becomes
+the exit of the nearest entrance of the same tier facing the same way behind it.
+api_scan shows which end is the input and which the output.
+
+A pipe-to-ground pair carries fluid under anything, with up to 9 tiles between its
+ends. Each end faces its above-ground pipe connection and connects underground on the
+opposite side, so the two ends of a pair face away from each other.
 """
 
 

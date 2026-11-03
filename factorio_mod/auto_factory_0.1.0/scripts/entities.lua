@@ -102,6 +102,9 @@ function entities.entry(entity, origin)
   if entity.type == "resource" then
     entry.amount = entity.amount
   end
+  if entity.type == "underground-belt" then
+    entry.underground = entity.belt_to_ground_type
+  end
   if entity.health then
     entry.health = common.rounded(entity.health)
   end
