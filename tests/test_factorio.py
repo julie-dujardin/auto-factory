@@ -197,3 +197,14 @@ def test_recipe_forwards_item() -> None:
     api.execute("api_recipe", {"item": "iron-plate"})
     request = json.loads(raw.commands[0].removeprefix("/af "))
     assert request == {"id": 1, "method": "recipe", "params": {"item": "iron-plate"}}
+
+
+def test_search_forwards_query() -> None:
+    raw = FakeRcon({"item": ["iron-gear-wheel"]})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    assert api.execute("api_search", {"query": "gear", "kind": "item"}) == (
+        '{"item":["iron-gear-wheel"]}'
+    )
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert request["method"] == "search"

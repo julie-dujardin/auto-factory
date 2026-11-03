@@ -1,6 +1,7 @@
 local actions = require("scripts.actions")
 local common = require("scripts.common")
 local entities = require("scripts.entities")
+local ids = require("scripts.ids")
 local research = require("scripts.research")
 
 local handlers = {}
@@ -116,19 +117,10 @@ local function matching_entity_names(fragment)
     end
   end
   if #names == 0 then
-    common.fail("no entity prototype name contains " .. fragment)
+    -- Fails, since no entity name contains fragment, listing similar names.
+    ids.check(fragment, "entity")
   end
   return names
-end
-
--- The engine returns nothing for an unknown type, which reads as "none nearby".
-local function check_entity_type(entity_type)
-  for _, prototype in pairs(prototypes.entity) do
-    if prototype.type == entity_type then
-      return
-    end
-  end
-  common.fail("unknown entity type: " .. entity_type)
 end
 
 function handlers.find(params)
@@ -141,7 +133,12 @@ function handlers.find(params)
   end
   local name = params.name or ""
   local entity_type = params.type or ""
+  -- The engine matches nothing for an unknown type or status, which reads as "none
+  -- nearby".
   local status = params.status or ""
+  if status ~= "" then
+    ids.check(status, "status")
+  end
   if name == "" and entity_type == "" then
     common.fail("give a name or type filter")
   end
@@ -151,8 +148,7 @@ function handlers.find(params)
     filter.name = matching_entity_names(name)
   end
   if entity_type ~= "" then
-    check_entity_type(entity_type)
-    filter.type = entity_type
+    filter.type = ids.check(entity_type, "entity_type")
   end
   local found_ok, found = pcall(player.surface.find_entities_filtered, filter)
   if not found_ok then

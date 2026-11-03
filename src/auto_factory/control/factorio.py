@@ -106,6 +106,7 @@ class RconFactorioAPI:
             "api_rotate": "rotate",
             "api_research": "research",
             "api_recipe": "recipe",
+            "api_search": "search",
         }
         try:
             method = methods[name]

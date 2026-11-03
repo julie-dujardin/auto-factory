@@ -1,4 +1,5 @@
 local common = require("scripts.common")
+local ids = require("scripts.ids")
 
 local research = {handlers = {}}
 
@@ -52,12 +53,9 @@ end
 
 function research.handlers.research(params)
   local player = common.get_player(params)
-  local name = common.required_string(params, "technology")
+  local name = ids.check(common.required_string(params, "technology"), "technology")
   local force = player.force
   local technology = force.technologies[name]
-  if not technology then
-    common.fail("unknown technology: " .. name)
-  end
   if technology.researched then
     common.fail(name .. " is already researched")
   end

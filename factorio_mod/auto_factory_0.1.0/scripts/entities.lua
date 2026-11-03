@@ -1,4 +1,5 @@
 local common = require("scripts.common")
+local ids = require("scripts.ids")
 
 local entities = {}
 
@@ -55,7 +56,7 @@ function entities.find(player, name, position)
   local candidates = player.surface.find_entities_filtered {
     position = position,
     radius = 0.8,
-    name = name,
+    name = ids.check(name, "entity"),
     limit = 10,
   }
   local closest = nil

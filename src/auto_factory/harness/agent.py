@@ -10,7 +10,13 @@ from langfuse import get_client
 from ..control.computer import Computer, Screen, Screenshot
 from ..control.factorio import FactorioAPI
 from .tasks import Task, TaskTree
-from .tools import TASK_TOOL_NAMES, ControlMode, execute_tool, tools_for
+from .tools import (
+    LOOKUP_TOOL_NAMES,
+    TASK_TOOL_NAMES,
+    ControlMode,
+    execute_tool,
+    tools_for,
+)
 
 SYSTEM_PROMPT = """You are controlling Factorio through observations and tools.
 Work toward the user's goal in deliberate steps. Inspect the newest observations
@@ -32,8 +38,14 @@ Avoid manual actions: prefer using machines rather than performing manual action
 Never guess a recipe. Your memory of ingredients, amounts, crafting times, machines,
 and unlock state is unreliable; api_recipe is the source of truth. Look up the goal's
 items and their ingredients with api_recipe before planning, and again for every new
-item you plan to craft, smelt, or build. api_recipe works at any time, even before
-the current task has an approach.
+item you plan to craft, smelt, or build.
+
+Never guess an ID either. When unsure of the exact name of an item, fluid, recipe,
+entity, entity type, technology, or entity status, find it with api_search. An error
+for an unknown ID lists similar IDs: pick from them or search, never retry a variant.
+
+api_recipe and api_search work at any time, even before the current task has an
+approach.
 
 Plan with the task tools before acting. Split the goal into ordered tasks with
 add_tasks. For the current task, either split it further or, once it is concrete, call
@@ -295,7 +307,7 @@ class FactorioAgent:
     def _execute(self, tasks: TaskTree, name: str, arguments: dict[str, Any]) -> str:
         if name in TASK_TOOL_NAMES:
             return tasks.handle(name, arguments)
-        if tasks.current.approach is None and name != "api_recipe":
+        if tasks.current.approach is None and name not in LOOKUP_TOOL_NAMES:
             raise ValueError(
                 f"{tasks.current.label} has no approach yet; call add_tasks or "
                 "propose_approaches first"

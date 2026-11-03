@@ -1,4 +1,5 @@
 local common = require("scripts.common")
+local ids = require("scripts.ids")
 
 local rounded = common.rounded
 local handlers = {}
@@ -93,19 +94,6 @@ local function unlocking_technologies(recipe_name)
   return names
 end
 
-local function similar_names(fragment)
-  local names = {}
-  for _, table_of in pairs {prototypes.item, prototypes.fluid} do
-    for name in pairs(table_of) do
-      if string.find(name, fragment, 1, true) then
-        table.insert(names, name)
-      end
-    end
-  end
-  table.sort(names)
-  return {table.unpack(names, 1, 10)}
-end
-
 local function machines_for(character)
   local crafters = {}
   local miners = {}
@@ -183,14 +171,7 @@ end
 
 function handlers.recipe(params)
   local player = common.get_player(params)
-  local name = common.required_string(params, "item")
-  if not prototypes.item[name] and not prototypes.fluid[name] then
-    local similar = similar_names(name)
-    if #similar == 0 then
-      common.fail("unknown item or fluid: " .. name)
-    end
-    common.fail("unknown item or fluid: " .. name .. "; similar: " .. table.concat(similar, ", "))
-  end
+  local name = ids.check(common.required_string(params, "item"), "item", "fluid")
   local force = player.force
   local craftable = craftable_items(force)
   local crafters, miners = machines_for(player.character.prototype)

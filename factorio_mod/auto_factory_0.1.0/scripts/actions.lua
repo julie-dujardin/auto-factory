@@ -2,6 +2,7 @@
 -- it, and the caller polls status until it is done.
 local common = require("scripts.common")
 local entities = require("scripts.entities")
+local ids = require("scripts.ids")
 
 local actions = {handlers = {}}
 local handlers = actions.handlers
@@ -258,7 +259,7 @@ function handlers.wait(params)
     action.baseline = finished
   end
   if condition == "items" then
-    action.item = common.required_string(params, "item")
+    action.item = ids.check(common.required_string(params, "item"), "item")
   end
   if condition ~= "handcraft" then
     action.goal = math.max(1, math.floor(common.required_number(params, "count")))

@@ -234,6 +234,35 @@ API_TOOLS = [
         ),
     ),
     _tool(
+        "api_search",
+        "Find exact IDs from words or a partial or misspelled name. Returns the "
+        "closest IDs per kind, best first: items, fluids, recipes, entities, "
+        "entity types (for api_find's type), technologies, and entity statuses.",
+        _object_schema(
+            {
+                "query": {
+                    "type": "string",
+                    "description": "Words or part of the ID, e.g. assembling machine "
+                    "or gear.",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "any",
+                        "item",
+                        "fluid",
+                        "recipe",
+                        "entity",
+                        "entity_type",
+                        "technology",
+                        "status",
+                    ],
+                },
+            },
+            ["query", "kind"],
+        ),
+    ),
+    _tool(
         "api_craft",
         "Queue a hand-crafting recipe, consuming ingredients and taking normal crafting time.",
         _object_schema(
@@ -444,6 +473,8 @@ TASK_TOOLS = [
     ),
 ]
 TASK_TOOL_NAMES = {tool["function"]["name"] for tool in TASK_TOOLS}
+# Read-only lookups that inform planning, so they run before the task has an approach.
+LOOKUP_TOOL_NAMES = {"api_recipe", "api_search"}
 
 
 def tools_for(desktop: bool, api: bool) -> list[dict[str, Any]]:

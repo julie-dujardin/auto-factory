@@ -1,5 +1,6 @@
 local common = require("scripts.common")
 local entities = require("scripts.entities")
+local ids = require("scripts.ids")
 
 local handlers = {}
 
@@ -14,7 +15,7 @@ end
 
 function handlers.craft(params)
   local player = common.get_player(params)
-  local recipe = common.required_string(params, "recipe")
+  local recipe = ids.check(common.required_string(params, "recipe"), "recipe")
   local count = math.max(1, math.min(100, math.floor(common.required_number(params, "count"))))
   local queued = player.begin_crafting {recipe = recipe, count = count, silent = false}
   return {recipe = recipe, requested = count, queued = queued}
@@ -52,11 +53,7 @@ local function line_position(start, line, spacing, index)
 end
 
 local function placed_entity(item)
-  local prototype = prototypes.item[item]
-  if not prototype then
-    common.fail("unknown item " .. item)
-  end
-  return prototype.place_result
+  return prototypes.item[ids.check(item, "item")].place_result
 end
 
 local function footprint(entity, direction)
@@ -252,7 +249,7 @@ end
 
 function handlers.insert(params)
   local player = common.get_player(params)
-  local item = common.required_string(params, "item")
+  local item = ids.check(common.required_string(params, "item"), "item")
   local count = math.max(1, math.floor(common.required_number(params, "count")))
   local name, entity = reachable_entity(player, params)
   local inventory = player.get_main_inventory()
@@ -266,7 +263,7 @@ end
 
 function handlers.take(params)
   local player = common.get_player(params)
-  local item = common.required_string(params, "item")
+  local item = ids.check(common.required_string(params, "item"), "item")
   local count = math.max(1, math.floor(common.required_number(params, "count")))
   local name, entity = reachable_entity(player, params)
   local removed = entity.remove_item {name = item, count = count}

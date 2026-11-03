@@ -152,12 +152,13 @@ def test_game_tools_need_an_approach() -> None:
     )
 
 
-def test_recipe_lookup_needs_no_approach() -> None:
+def test_lookups_need_no_approach() -> None:
     completions = FakeCompletions(
         [
             [
-                FakeCall("api_recipe", '{"item":"iron-gear-wheel"}'),
-                FakeCall("api_craft", '{"recipe":"iron-gear-wheel","count":1}', "c2"),
+                FakeCall("api_search", '{"query":"gear","kind":"item"}'),
+                FakeCall("api_recipe", '{"item":"iron-gear-wheel"}', "c2"),
+                FakeCall("api_craft", '{"recipe":"iron-gear-wheel","count":1}', "c3"),
             ],
             FakeCall("fail_task", '{"reason":"gave up"}'),
         ]
@@ -173,7 +174,10 @@ def test_recipe_lookup_needs_no_approach() -> None:
     )
 
     assert agent.run("craft") == "Failed: gave up"
-    assert factorio.actions == [("api_recipe", {"item": "iron-gear-wheel"})]
+    assert factorio.actions == [
+        ("api_search", {"query": "gear", "kind": "item"}),
+        ("api_recipe", {"item": "iron-gear-wheel"}),
+    ]
     assert completions.requests[1]["messages"][-3]["content"].startswith(
         "error: the goal has no approach yet"
     )
