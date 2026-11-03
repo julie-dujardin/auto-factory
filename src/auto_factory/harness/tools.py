@@ -155,8 +155,10 @@ API_TOOLS = [
         "give each lane's item, its count, and flow in items per second; 0 means the "
         "lane is stopped. Underground belts say whether they are the input or output "
         "end. Underground belts and pipes give pair: the other end's position, or "
-        "unconnected. Electric poles give their network's power: available_kw that "
-        "generators can supply and demand_kw that machines draw.",
+        "unconnected. Electric poles give supply_area: the left_top and right_bottom "
+        "corners of the square they cover, powering every machine that overlaps it; and "
+        "their network's power: available_kw that generators can supply and demand_kw "
+        "that machines draw.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],

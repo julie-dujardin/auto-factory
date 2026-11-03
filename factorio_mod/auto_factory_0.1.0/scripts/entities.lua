@@ -115,6 +115,15 @@ local function network_power(pole)
   }
 end
 
+local function supply_area(pole, origin)
+  local reach = pole.prototype.get_supply_area_distance(pole.quality)
+  local position = pole.position
+  return {
+    left_top = common.offset_from(origin, {x = position.x - reach, y = position.y - reach}),
+    right_bottom = common.offset_from(origin, {x = position.x + reach, y = position.y + reach}),
+  }
+end
+
 function entities.entry(entity, origin)
   local entry = {
     name = entity.name,
@@ -135,6 +144,7 @@ function entities.entry(entity, origin)
     entry.pair = pair and common.offset_from(origin, pair.position) or "unconnected"
   end
   if entity.type == "electric-pole" then
+    entry.supply_area = supply_area(entity, origin)
     entry.power = network_power(entity)
   end
   if entity.health then
