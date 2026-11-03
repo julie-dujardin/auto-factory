@@ -168,7 +168,11 @@ API_TOOLS = [
         "and trash; other inventories, such as chests and the stack of an "
         "item-on-ground, are items. Their fluids are input_fluids and "
         "output_fluids; pipes and tanks hold fluids. Inserters give held: the stack in "
-        "their hand. Entities give an id that stays fixed as the player moves. "
+        "their hand, and takes_from: what they pick up from, or nothing; inserters "
+        "and mining drills give gives_to: what they drop into, or ground. Both give "
+        "that entity's id and name, plus for a belt the lanes of that one tile under "
+        "the tile's own id, for a crafting machine its recipe, and for anything else "
+        "the items it holds. Entities give an id that stays fixed as the player moves. "
         "Straight transport belt runs are one entry: position and id are the upstream "
         "tile's and the run covers length tiles toward direction. Belts "
         "give each lane's item, its count, and flow in items per second; 0 means the "
@@ -395,8 +399,9 @@ API_TOOLS = [
         "how far. Stops at the first tile that "
         "is blocked, out of build reach, or out of items. Returns how many were "
         "placed, the offsets of the first and last, snapped_from when snapping moved "
-        "the first, and built: each entity's id and what it takes from, gives to, is "
-        "fed or emptied by, powers, or joins by pipe (fluid_to), with warnings for "
+        "the first, and built: each entity's id, takes_from and gives_to as in "
+        "api_scan, and what it is fed or emptied by, powers, or joins by pipe "
+        "(fluid_to), with warnings for "
         "ends that lead nowhere; a belt or pipe line lists only its two ends.",
         _object_schema(
             {

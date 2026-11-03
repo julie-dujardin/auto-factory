@@ -255,6 +255,54 @@ local function mined_resources(drill)
   return amounts
 end
 
+local function holds_items(entity)
+  if entity.prototype.belt_speed or entity.type == "item-entity" then
+    return true
+  end
+  for index = 1, entity.get_max_inventory_index() do
+    if entity.get_inventory(index) then
+      return true
+    end
+  end
+  return false
+end
+
+-- What an inserter or drill reaches on side, pickup or drop: a belt or an entity holding
+-- items. The engine sets pickup_target and drop_target only in a later tick than the
+-- build.
+local function holder_at(reacher, side)
+  local target = reacher[side .. "_target"]
+  if target then
+    return target
+  end
+  for _, other in pairs(reacher.surface.find_entities_filtered {position = reacher[side .. "_position"]}) do
+    if other ~= reacher and other.type ~= "character" and holds_items(other) then
+      return other
+    end
+  end
+  return nil
+end
+
+-- The holder reacher reaches on side with what it carries there: a belt's lanes on that
+-- tile, a crafting machine's recipe, or else the items it holds.
+local function endpoint(reacher, side)
+  local holder = holder_at(reacher, side)
+  if not holder then
+    return nil
+  end
+  local result = {id = entities.id(holder), name = holder.name}
+  local crafts, recipe = pcall(holder.get_recipe)
+  if holder.prototype.belt_speed then
+    result.lanes = belts.lanes(holder)
+  elseif crafts then
+    result.recipe = recipe and recipe.name
+  else
+    local items = entities.contents(holder)
+    result.items = next(items) and items or nil
+  end
+  return result
+end
+
 local function inserter_filters(inserter)
   local items = {}
   for slot = 1, inserter.filter_slot_count do
@@ -311,6 +359,10 @@ function entities.entry(entity, origin, networks)
     end
     local override = entity.inserter_stack_size_override
     entry.stack_size_override = override > 0 and override or nil
+    entry.takes_from = endpoint(entity, "pickup") or "nothing"
+  end
+  if entity.type == "inserter" or entity.type == "mining-drill" then
+    entry.gives_to = endpoint(entity, "drop") or "ground"
   end
   if entity.type == "splitter" then
     entry.input_priority = entity.splitter_input_priority
@@ -345,18 +397,6 @@ local function labels(list)
   return #result > 0 and result or nil
 end
 
--- What an inserter or drill reaches at position: a belt or an entity holding items.
--- The engine only sets pickup_target and drop_target in a later tick than the build.
-local function holder_at(reacher, position)
-  for _, other in pairs(reacher.surface.find_entities_filtered {position = position}) do
-    if other ~= reacher and other.type ~= "character"
-      and (other.prototype.belt_speed or other.type == "item-entity" or other.get_max_inventory_index() > 0) then
-      return other
-    end
-  end
-  return nil
-end
-
 -- Long-handed inserters reach 2 tiles past the tile next to them.
 local FEEDER_REACH = 3
 
@@ -373,10 +413,10 @@ local function feeders(entity)
     },
     type = {"inserter", "mining-drill"},
   }) do
-    if holder_at(other, other.drop_position) == entity then
+    if holder_at(other, "drop") == entity then
       table.insert(fed_by, other)
     end
-    if other.type == "inserter" and holder_at(other, other.pickup_position) == entity then
+    if other.type == "inserter" and holder_at(other, "pickup") == entity then
       table.insert(emptied_by, other)
     end
   end
@@ -440,17 +480,13 @@ function entities.links(entity, origin)
   local warnings = {}
   if entity.type == "inserter" or entity.type == "mining-drill" then
     if entity.type == "inserter" then
-      local source = holder_at(entity, entity.pickup_position)
-      if source then
-        links.takes_from = entities.label(source)
-      else
+      links.takes_from = endpoint(entity, "pickup")
+      if not links.takes_from then
         table.insert(warnings, "takes from nothing")
       end
     end
-    local destination = holder_at(entity, entity.drop_position)
-    if destination then
-      links.gives_to = entities.label(destination)
-    else
+    links.gives_to = endpoint(entity, "drop")
+    if not links.gives_to then
       table.insert(warnings, "drops onto the ground")
     end
   elseif entity.type == "electric-pole" then
