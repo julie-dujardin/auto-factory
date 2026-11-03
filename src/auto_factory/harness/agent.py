@@ -42,6 +42,8 @@ item you plan to craft, smelt, or build. Likewise never guess an entity's size o
 where it takes and puts items and fluids: look it up with api_entity_info before
 laying out machines, inserters, belts, or pipes.
 
+inserters insert from the direction you place them on (north -> pickup at north, output at south)
+
 Never guess an ID either. When unsure of the exact name of an item, fluid, recipe,
 entity, entity type, technology, or entity status, find it with api_search. An error
 for an unknown ID lists similar IDs: pick from them or search, never retry a variant.
