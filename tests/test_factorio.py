@@ -128,6 +128,26 @@ def test_timed_action_stops_when_polling_fails(monkeypatch) -> None:
     assert raw.methods[-1] == "stop"
 
 
+def test_belt_results_are_requested_again_for_flow(monkeypatch) -> None:
+    monkeypatch.setattr("auto_factory.control.factorio.BELT_SAMPLE_SECONDS", 0)
+    belt = {"name": "transport-belt", "lanes": {"left": {"item": "iron-plate"}}}
+    sampled = {
+        "name": "transport-belt",
+        "lanes": {"left": {"item": "iron-plate", "per_second": 7.5}},
+    }
+    raw = ScriptedRcon(
+        {
+            "observe": [{"entities": [belt]}, {"entities": [sampled]}],
+            "find": [{"entities": [{"name": "stone-furnace"}]}],
+        }
+    )
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+
+    assert api.observe(8) == {"entities": [sampled]}
+    api.execute("api_find", {"name": "furnace", "radius": 10, "limit": 5})
+    assert raw.methods == ["observe", "observe", "find"]
+
+
 def test_find_forwards_filters() -> None:
     raw = FakeRcon({"matched": 0, "entities": []})
     api = RconFactorioAPI("localhost", 27015, "secret", client=raw)

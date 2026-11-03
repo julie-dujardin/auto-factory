@@ -9,6 +9,9 @@ RESPONSE_PREFIX = "__AUTO_FACTORY__"
 # The mod caps actions at 60 game seconds; this covers slowed game speeds too.
 ACTION_TIMEOUT = 120.0
 POLL_INTERVAL = 0.1
+# Belt flow is measured between two requests a few game ticks apart (see belts.lua).
+BELT_SAMPLED_METHODS = {"observe", "find"}
+BELT_SAMPLE_SECONDS = 0.1
 # Factorio encodes an empty Lua table as {}, so array fields need restoring by name.
 LIST_FIELDS: dict[str, list[tuple[str, ...]]] = {
     "observe": [("entities",), ("research", "queue"), ("research", "available")],
@@ -130,6 +133,15 @@ class RconFactorioAPI:
             time.sleep(POLL_INTERVAL)
 
     def call(self, method: str, params: dict[str, Any]) -> Any:
+        result = self._request(method, params)
+        if method in BELT_SAMPLED_METHODS and any(
+            "lanes" in entry for entry in result.get("entities", [])
+        ):
+            time.sleep(BELT_SAMPLE_SECONDS)
+            result = self._request(method, params)
+        return result
+
+    def _request(self, method: str, params: dict[str, Any]) -> Any:
         self._request_id += 1
         request = {
             "id": self._request_id,

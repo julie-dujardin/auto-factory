@@ -1,3 +1,4 @@
+local belts = require("scripts.belts")
 local common = require("scripts.common")
 local ids = require("scripts.ids")
 
@@ -115,6 +116,7 @@ function entities.entry(entity, origin)
       entry.fluids[fluid] = common.rounded(amount)
     end
   end
+  entry.lanes = belts.lanes(entity)
   local recipe_ok, recipe = pcall(entity.get_recipe)
   if recipe_ok and recipe then
     entry.recipe = recipe.name
