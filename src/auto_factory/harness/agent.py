@@ -62,6 +62,10 @@ order; the chain stops after an error, a blocked walk, a partial placement,
 complete_task, or fail_task, and skips the calls after it. Use the next observations
 to verify the chain's effect.
 
+Keep each turn's thinking short: a turn that thinks too long is cut off before it
+calls a tool. When a plan grows long, record what you have decided with add_tasks and
+work out each task in its own turn.
+
 A splitter is 2 tiles wide across the flow and 1 long; give api_place the point
 between its two tiles. It splits the items entering its back evenly between the two
 tiles in front, keeping each item on its lane, and sends everything to one side when
@@ -90,6 +94,13 @@ MODE_PROMPTS: dict[ControlMode, str] = {
 SCREEN_ONLY_PROMPT = (
     "Use the screenshot and structured game state to see, and API tools to act."
 )
+# The truncated reasoning is not sent back, so the next turn would start over.
+CUT_OFF_WARNING = {
+    "role": "user",
+    "content": "Your last turn hit the output limit while thinking, before it called "
+    "a tool, and its thinking is lost. Think less per turn: record what you have "
+    "decided with add_tasks, then work out one task at a time.",
+}
 
 
 def observation(screenshot: Screenshot) -> dict[str, Any]:
@@ -260,7 +271,8 @@ class FactorioAgent:
                     tools=self._tools,
                     **parameters,
                 )
-                message = response.choices[0].message
+                choice = response.choices[0]
+                message = choice.message
                 tool_calls = message.tool_calls or []
                 reply = {
                     "role": "assistant",
@@ -273,7 +285,17 @@ class FactorioAgent:
                     output=reply | thinking(message),
                     usage_details=usage_details(response),
                 )
+                cut_off = not tool_calls and choice.finish_reason == "length"
+                if cut_off:
+                    generation.update(
+                        level="WARNING",
+                        status_message="output limit before a tool call",
+                    )
             messages.append(reply)
+            if cut_off:
+                self._report(f"step {step}: output limit hit before a tool call")
+                messages.append(CUT_OFF_WARNING)
+                continue
             if not tool_calls:
                 self._report(f"step {step}: model returned no tool call")
                 continue

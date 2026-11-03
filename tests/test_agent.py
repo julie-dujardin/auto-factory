@@ -7,6 +7,7 @@ import pytest
 
 from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
+    CUT_OFF_WARNING,
     FactorioAgent,
     fell_short,
     game_state_observation,
@@ -49,7 +50,11 @@ class FakeCompletions:
         calls = self.calls.pop(0)
         tool_calls = calls if isinstance(calls, list) else [calls]
         message = SimpleNamespace(content=None, tool_calls=tool_calls)
-        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        # An empty list stands for a turn cut off while thinking.
+        finish_reason = "tool_calls" if tool_calls else "length"
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason=finish_reason)]
+        )
 
 
 class FakeComputer:
@@ -138,6 +143,15 @@ def test_agent_acts_on_an_approach_then_completes_goal() -> None:
     assert computer_agent(completions, computer).run("move") == "done"
     assert computer.actions == [("game_action", ("move_up", 0.5))]
     assert len(completions.requests) == 3
+
+
+def test_cut_off_turn_warns_to_think_less() -> None:
+    completions = FakeCompletions([[], FakeCall("fail_task", '{"reason":"gave up"}')])
+
+    assert computer_agent(completions, FakeComputer()).run("move") == "Failed: gave up"
+    messages = completions.requests[1]["messages"]
+    warnings = [m for m in messages if m["content"] == CUT_OFF_WARNING["content"]]
+    assert len(warnings) == 1
 
 
 def test_game_tools_need_an_approach() -> None:
