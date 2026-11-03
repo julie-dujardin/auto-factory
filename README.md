@@ -21,7 +21,7 @@ Start Factorio:
 uv run --env-file .env auto-factory-game
 ```
 
-This links the mod from this checkout and enables RCON with the `.env` credentials. For `api` and `mixed` control, host a multiplayer game, then check the connection with `uv run --env-file .env auto-factory --check-api`.
+This links the mod from this checkout and enables RCON with the `.env` credentials. For `api` and `mixed` control, start a game, then check the connection with `uv run --env-file .env auto-factory --check-api`.
 
 On macOS there is no isolated display, so only `--control api` works.
 
