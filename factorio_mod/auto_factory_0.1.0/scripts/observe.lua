@@ -1,4 +1,5 @@
 local actions = require("scripts.actions")
+local belts = require("scripts.belts")
 local common = require("scripts.common")
 local entities = require("scripts.entities")
 local ids = require("scripts.ids")
@@ -46,6 +47,9 @@ local OBSERVABLE_TYPES = {
   "underground-belt",
 }
 
+-- Entries after folding transport belts into runs, nearest first.
+local NEARBY_LISTED = 100
+
 function handlers.observe(params)
   local player = common.get_player(params)
   local radius = math.max(2, math.min(64, tonumber(params.radius) or 12))
@@ -74,16 +78,32 @@ function handlers.observe(params)
     summary.nearest_distance = nil
   end
 
-  local nearby_entries = {}
   local nearby = player.surface.find_entities_filtered {
     position = player.position,
     radius = radius,
     type = OBSERVABLE_TYPES,
-    limit = 100,
   }
   local origin = player.position
+  local transport_belts = {}
+  local candidates = {}
   for _, entity in pairs(nearby) do
-    table.insert(nearby_entries, entities.entry(entity, origin))
+    if entity.type == "transport-belt" then
+      table.insert(transport_belts, entity)
+    else
+      table.insert(candidates, {
+        entity = entity,
+        distance = common.distance_squared(origin, entity.position),
+      })
+    end
+  end
+  for _, run in pairs(belts.runs(transport_belts, origin)) do
+    table.insert(candidates, run)
+  end
+  table.sort(candidates, function(a, b) return a.distance < b.distance end)
+  local nearby_entries = {}
+  for index = 1, math.min(NEARBY_LISTED, #candidates) do
+    local candidate = candidates[index]
+    table.insert(nearby_entries, candidate.entry or entities.entry(candidate.entity, origin))
   end
 
   return {

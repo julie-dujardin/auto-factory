@@ -149,8 +149,11 @@ API_TOOLS = [
     _tool(
         "api_scan",
         "Read structured player, inventory, resource, and entity state around the "
-        "player, including the items and fluids each entity holds. Belts give each "
-        "lane's item and flow in items per second; 0 means the lane is stopped.",
+        "player, including the items and fluids each entity holds, listing the 100 "
+        "nearest entities. Straight transport belt runs are one entry: position is "
+        "the upstream tile and the run covers length tiles toward direction. Belts "
+        "give each lane's item and flow in items per second; 0 means the lane is "
+        "stopped.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],
