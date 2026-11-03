@@ -30,8 +30,9 @@ them for entities you act on or build next to.
 Use game_action for known controls instead of reasoning about keyboard letters.
 Use click with the right button and a hold duration to mine resources or entities.
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
-The player can build and interact with entities up to 10 tiles away, but must be
-within about 2.7 tiles of a resource tile to mine it; walk closer before acting.
+The player builds, reaches entities, and mines resource tiles only within the
+build_distance, reach_distance, and resource_reach_distance api_scan gives for the
+player; walk closer before acting.
 Research of type "trigger" completes automatically when the required action occurs
 (producing items, etc), without needing to be queued.
 
