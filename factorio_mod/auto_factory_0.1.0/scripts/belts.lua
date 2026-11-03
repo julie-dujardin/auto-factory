@@ -103,8 +103,8 @@ local function tile_key(x, y)
 end
 
 -- Transport belts as one entry per straight run: consecutive tiles with the same name
--- and direction, split where a lane's item changes. Each entry comes with the squared
--- distance from origin to the run's nearest belt.
+-- and direction, split where a lane's item changes. Each entry comes with its upstream
+-- belt as head and the squared distance from origin to the run's nearest belt.
 function belts.runs(transport_belts, origin)
   local at = {}
   local measured = {}
@@ -158,6 +158,7 @@ function belts.runs(transport_belts, origin)
   local function finish(run)
     local head = run.head
     table.insert(results, {
+      head = head,
       distance = run.distance,
       entry = {
         name = head.name,

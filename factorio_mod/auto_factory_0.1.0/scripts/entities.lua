@@ -107,11 +107,41 @@ function entities.amount(entity)
   return total
 end
 
+-- An entity's id is its unit number. The engine looks unit numbers up only for a few
+-- prototypes, so every entity given out with an id is remembered here.
+function entities.id(entity)
+  local id = entity.unit_number
+  if id then
+    storage.entity_ids = storage.entity_ids or {}
+    storage.entity_ids[id] = entity
+  end
+  return id
+end
+
+function entities.by_id(id)
+  local entity = storage.entity_ids and storage.entity_ids[id]
+  if not entity then
+    common.fail("no entity has id " .. id .. "; ids come from api_scan, api_find, api_place, and api_connect")
+  end
+  if not entity.valid then
+    storage.entity_ids[id] = nil
+    common.fail("entity " .. id .. " is gone")
+  end
+  return entity
+end
+
 local FIND_RADIUS = 0.8
 local NEARBY_RADIUS = 32
 local NEARBY_LISTED = 5
 
-function entities.find(player, name, position)
+-- The entity params name: by id, or when id is 0 by entity name at dx/dy.
+function entities.target(player, params)
+  local id = math.floor(tonumber(params.id) or 0)
+  if id ~= 0 then
+    return entities.by_id(id)
+  end
+  local name = common.required_string(params, "entity")
+  local position = common.position_from(player, params)
   local surface = player.surface
   ids.check(name, "entity")
   local candidates = surface.find_entities_filtered {
@@ -180,6 +210,7 @@ end
 
 function entities.entry(entity, origin)
   local entry = {
+    id = entities.id(entity),
     name = entity.name,
     type = entity.type,
     position = common.offset_from(origin, entity.position),
@@ -223,6 +254,147 @@ function entities.entry(entity, origin)
   end
   entry.status = entities.status(entity)
   return entry
+end
+
+function entities.label(entity)
+  local id = entities.id(entity)
+  return id and entity.name .. " #" .. id or entity.name
+end
+
+local function labels(list)
+  local result = {}
+  for _, entity in pairs(list) do
+    table.insert(result, entities.label(entity))
+  end
+  return #result > 0 and result or nil
+end
+
+-- What an inserter or drill reaches at position: a belt or an entity holding items.
+-- The engine only sets pickup_target and drop_target in a later tick than the build.
+local function holder_at(reacher, position)
+  for _, other in pairs(reacher.surface.find_entities_filtered {position = position}) do
+    if other ~= reacher and other.type ~= "character"
+      and (other.prototype.belt_speed or other.type == "item-entity" or other.get_max_inventory_index() > 0) then
+      return other
+    end
+  end
+  return nil
+end
+
+-- Long-handed inserters reach 2 tiles past the tile next to them.
+local FEEDER_REACH = 3
+
+-- Inserters and drills around entity that drop into it, and inserters that take from it.
+local function feeders(entity)
+  local position = entity.position
+  local reach_x = entity.tile_width / 2 + FEEDER_REACH
+  local reach_y = entity.tile_height / 2 + FEEDER_REACH
+  local fed_by, emptied_by = {}, {}
+  for _, other in pairs(entity.surface.find_entities_filtered {
+    area = {
+      left_top = {x = position.x - reach_x, y = position.y - reach_y},
+      right_bottom = {x = position.x + reach_x, y = position.y + reach_y},
+    },
+    type = {"inserter", "mining-drill"},
+  }) do
+    if holder_at(other, other.drop_position) == entity then
+      table.insert(fed_by, other)
+    end
+    if other.type == "inserter" and holder_at(other, other.pickup_position) == entity then
+      table.insert(emptied_by, other)
+    end
+  end
+  return fed_by, emptied_by
+end
+
+local function uses_electricity(entity)
+  return entity.type ~= "electric-pole" and entity.prototype.electric_energy_source_prototype ~= nil
+end
+
+local function produces_power(entity)
+  return entity.prototype.get_max_energy_production() > 0
+end
+
+local function pole_links(pole, links, warnings)
+  local reach = pole.prototype.get_supply_area_distance(pole.quality)
+  local position = pole.position
+  local covered = pole.surface.find_entities_filtered {
+    area = {
+      left_top = {x = position.x - reach, y = position.y - reach},
+      right_bottom = {x = position.x + reach, y = position.y + reach},
+    },
+  }
+  local powers, has_generator = 0, false
+  for _, other in pairs(covered) do
+    if uses_electricity(other) or (other.type ~= "electric-pole" and produces_power(other)) then
+      powers = powers + 1
+      has_generator = has_generator or produces_power(other)
+    end
+  end
+  links.powers = powers
+  local wired = {}
+  local connector = pole.get_wire_connector(defines.wire_connector_id.pole_copper, false)
+  for _, connection in pairs(connector and connector.connections or {}) do
+    table.insert(wired, connection.target.owner)
+  end
+  links.wired_to = labels(wired)
+  if #wired == 0 and not has_generator then
+    table.insert(warnings, "wired to no pole and no generator in its supply area")
+  end
+end
+
+-- Entities joined to entity's fluidboxes, each once.
+local function fluid_neighbours(entity)
+  local result, seen = {}, {}
+  for index = 1, entity.fluids_count do
+    for _, connection in pairs(entity.get_fluid_box_pipe_connections(index)) do
+      local target = connection.target
+      if target and target ~= entity and not seen[target.unit_number or target] then
+        seen[target.unit_number or target] = true
+        table.insert(result, target)
+      end
+    end
+  end
+  return result
+end
+
+-- What a just-built entity connects to, with warnings for ends that lead nowhere.
+function entities.links(entity, origin)
+  local links = {id = entities.id(entity), position = common.offset_from(origin, entity.position)}
+  local warnings = {}
+  if entity.type == "inserter" or entity.type == "mining-drill" then
+    if entity.type == "inserter" then
+      local source = holder_at(entity, entity.pickup_position)
+      if source then
+        links.takes_from = entities.label(source)
+      else
+        table.insert(warnings, "takes from nothing")
+      end
+    end
+    local destination = holder_at(entity, entity.drop_position)
+    if destination then
+      links.gives_to = entities.label(destination)
+    else
+      table.insert(warnings, "drops onto the ground")
+    end
+  elseif entity.type == "electric-pole" then
+    pole_links(entity, links, warnings)
+  else
+    local fed_by, emptied_by = feeders(entity)
+    links.fed_by = labels(fed_by)
+    links.emptied_by = labels(emptied_by)
+  end
+  if entity.prototype.belt_speed then
+    local neighbours = entity.belt_neighbours
+    links.belt_from = labels(neighbours.inputs)
+    links.belt_to = labels(neighbours.outputs)
+  end
+  links.fluid_to = labels(fluid_neighbours(entity))
+  if uses_electricity(entity) and not entity.is_connected_to_electric_network() then
+    table.insert(warnings, "not powered")
+  end
+  links.warnings = #warnings > 0 and warnings or nil
+  return links
 end
 
 return entities

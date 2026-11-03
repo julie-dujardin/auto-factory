@@ -1,17 +1,17 @@
 local common = require("scripts.common")
 local entities = require("scripts.entities")
 local ids = require("scripts.ids")
+local layout = require("scripts.layout")
 local recipes = require("scripts.recipes")
 
 local handlers = {}
 
 local function reachable_entity(player, params)
-  local name = common.required_string(params, "entity")
-  local entity = entities.find(player, name, common.position_from(player, params))
+  local entity = entities.target(player, params)
   if not player.can_reach_entity(entity) then
     common.fail("the entity is outside reach")
   end
-  return name, entity
+  return entity.name, entity
 end
 
 function handlers.craft(params)
@@ -57,24 +57,6 @@ local function placed_entity(item)
   return prototypes.item[ids.check(item, "item")].place_result
 end
 
-local function footprint(entity, direction)
-  if not entity then
-    return 1, 1
-  end
-  if direction == defines.direction.east or direction == defines.direction.west then
-    return entity.tile_height, entity.tile_width
-  end
-  return entity.tile_width, entity.tile_height
-end
-
--- Where the engine centres a footprint of this size built at value.
-local function snap(value, size)
-  if size % 2 == 1 then
-    return math.floor(value) + 0.5
-  end
-  return math.floor(value + 0.5)
-end
-
 local OBSTRUCTIONS_LISTED = 5
 
 -- Names what keeps entity from being built at position, or nil when it is unclear.
@@ -82,7 +64,7 @@ local function obstruction(player, entity, position, direction)
   if not entity then
     return nil
   end
-  local width, height = footprint(entity, direction)
+  local width, height = layout.footprint(entity, direction)
   -- Shrunk so neighbours touching the footprint's edges are not counted.
   local area = {
     left_top = {x = position.x - width / 2 + 0.1, y = position.y - height / 2 + 0.1},
@@ -138,7 +120,36 @@ local function held_count(player, cursor, item)
   return player.get_main_inventory().get_item_count(item) + held
 end
 
--- Returns why the item could not be placed, or nil once it is.
+-- Clearance between the character and a footprint it steps out of.
+local STEP_CLEARANCE = 0.1
+
+-- Moves the character just clear of area, as a player steps aside to build where they
+-- stand.
+local function step_aside(player, area)
+  local character = player.character
+  local box = character.bounding_box
+  if not layout.overlaps(box, area) then
+    return
+  end
+  local half_width = (box.right_bottom.x - box.left_top.x) / 2 + STEP_CLEARANCE
+  local half_height = (box.right_bottom.y - box.left_top.y) / 2 + STEP_CLEARANCE
+  local here = character.position
+  local steps = common.nearest_first({
+    {position = {x = area.left_top.x - half_width, y = here.y}},
+    {position = {x = area.right_bottom.x + half_width, y = here.y}},
+    {position = {x = here.x, y = area.left_top.y - half_height}},
+    {position = {x = here.x, y = area.right_bottom.y + half_height}},
+  }, here)
+  for _, step in pairs(steps) do
+    local spot = player.surface.find_non_colliding_position(character.name, step.position, 1, 0.1)
+    if spot and not layout.overlaps(layout.area(spot, 2 * half_width, 2 * half_height), area) then
+      character.teleport(spot)
+      return
+    end
+  end
+end
+
+-- Returns why the item could not be placed, or nil and the built entity.
 local function place_one(player, cursor, item, entity, position, direction)
   if common.distance_squared(player.position, position) > player.build_distance ^ 2 then
     return "the position is outside build reach"
@@ -150,6 +161,10 @@ local function place_one(player, cursor, item, entity, position, direction)
   local source = player.get_main_inventory().find_item_stack(item)
   if not source then
     return "the player has no " .. item
+  end
+  if entity then
+    local width, height = layout.footprint(entity, direction)
+    step_aside(player, layout.area(position, width, height))
   end
   if not cursor.transfer_stack(source, 1) then
     return "could not move " .. item .. " into the cursor"
@@ -167,7 +182,27 @@ local function place_one(player, cursor, item, entity, position, direction)
   if not placed then
     return "Factorio did not place the item"
   end
+  return nil, entity and player.surface.find_entity(entity.name, position)
 end
+
+-- Belt and pipe lines' middle tiles only link each other.
+local LINE_TYPES = {["transport-belt"] = true, pipe = true}
+
+-- What each built entity connects to.
+local function built_links(player, built)
+  local shown = built
+  if #built > 2 and LINE_TYPES[built[1].type] then
+    shown = {built[1], built[#built]}
+  end
+  local result = {}
+  for _, entity in pairs(shown) do
+    table.insert(result, entities.links(entity, player.position))
+  end
+  return #result > 0 and result or nil
+end
+
+-- Placements closer than this to the asked position are not reported as snapped.
+local SNAP_REPORTED = 0.25
 
 function handlers.place(params)
   local player = common.get_player(params)
@@ -177,34 +212,106 @@ function handlers.place(params)
   local count = line_count(params)
   local cursor = empty_cursor(player)
   local entity = placed_entity(item)
-  local width, height = footprint(entity, direction)
-  local start = common.position_from(player, params)
-  start = {x = snap(start.x, width), y = snap(start.y, height)}
+  local width, height = layout.footprint(entity, direction)
+  local start, requested = layout.start(player, params, width, height)
+  local stood = player.position
   -- Copies sit edge to edge.
   local spacing = height
   if line == defines.direction.east or line == defines.direction.west then
     spacing = width
   end
-  local placed, stopped = 0, nil
+  -- Tiles count as placed but build no entity.
+  local placed, built, stopped = 0, {}, nil
   for index = 0, count - 1 do
     local position = line_position(start, line, spacing, index)
-    stopped = place_one(player, cursor, item, entity, position, direction)
-    if stopped then
+    local reason, built_entity = place_one(player, cursor, item, entity, position, direction)
+    if reason then
+      stopped = reason
       break
     end
     placed = placed + 1
+    table.insert(built, built_entity)
   end
   if placed == 0 then
     common.fail(stopped)
   end
-  return {
+  local result = {
     placed = item,
     count = placed,
     position = common.offset_from(player.position, start),
     last = common.offset_from(player.position, line_position(start, line, spacing, placed - 1)),
     direction = params.direction,
     stopped = stopped,
+    built = built_links(player, built),
   }
+  if requested and common.distance_squared(requested, start) >= SNAP_REPORTED ^ 2 then
+    result.snapped_from = common.offset_from(player.position, requested)
+  end
+  if common.distance_squared(stood, player.position) > 0 then
+    result.stepped_aside = common.offset_from(stood, player.position)
+  end
+  return result
+end
+
+-- Spots where an inserter or pole of item connects the entities params name, and how
+-- many of them to build.
+local function connect_spots(item, entity, params)
+  local pickup_from = math.floor(tonumber(params.pickup_from) or 0)
+  local drop_into = math.floor(tonumber(params.drop_into) or 0)
+  local power = type(params.power) == "table" and params.power or {}
+  if pickup_from ~= 0 or drop_into ~= 0 then
+    if not entity or entity.type ~= "inserter" then
+      common.fail(item .. " is not an inserter; pickup_from and drop_into place inserters")
+    end
+    if pickup_from == 0 or drop_into == 0 then
+      common.fail("an inserter needs both pickup_from and drop_into")
+    end
+    local spots = layout.inserter_spots(entity, entities.by_id(pickup_from), entities.by_id(drop_into))
+    return spots, line_count(params)
+  end
+  if #power == 0 then
+    common.fail("give pickup_from and drop_into for an inserter, or power for an electric pole")
+  end
+  if not entity or entity.type ~= "electric-pole" then
+    common.fail(item .. " is not an electric pole; power places poles")
+  end
+  local targets = {}
+  for _, id in pairs(power) do
+    table.insert(targets, entities.by_id(math.floor(tonumber(id) or 0)))
+  end
+  return layout.pole_spots(entity, targets), 1
+end
+
+function handlers.connect(params)
+  local player = common.get_player(params)
+  local item = common.required_string(params, "item")
+  local entity = placed_entity(item)
+  local spots, count = connect_spots(item, entity, params)
+  local cursor = empty_cursor(player)
+  local stood = player.position
+  local built, first_reason = {}, nil
+  for _, spot in ipairs(spots) do
+    if #built == count then
+      break
+    end
+    local reason, built_entity = place_one(player, cursor, item, entity, spot.position, spot.direction)
+    if reason then
+      first_reason = first_reason or reason
+    else
+      table.insert(built, built_entity)
+    end
+  end
+  if #built == 0 then
+    common.fail("none of the " .. #spots .. " fitting spots worked; the best: " .. first_reason)
+  end
+  local result = {placed = item, count = #built, built = built_links(player, built)}
+  if #built < count then
+    result.stopped = "only " .. #built .. " of the " .. #spots .. " fitting spots worked; the best failed: " .. first_reason
+  end
+  if common.distance_squared(stood, player.position) > 0 then
+    result.stepped_aside = common.offset_from(stood, player.position)
+  end
+  return result
 end
 
 -- Drag-building, with its automatic undergrounds, is engine input handling that Lua
@@ -233,7 +340,7 @@ function handlers.drag_prepare(params)
   end
   -- Tile centres keep the pointer clear of tile edges.
   local start = common.position_from(player, params)
-  start = {x = snap(start.x, 1), y = snap(start.y, 1)}
+  start = {x = layout.snap(start.x, 1), y = layout.snap(start.y, 1)}
   local tiles = 0
   while tiles < count
     and common.distance_squared(player.position, line_position(start, line, 1, tiles))

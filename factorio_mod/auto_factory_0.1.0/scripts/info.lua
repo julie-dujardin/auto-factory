@@ -94,11 +94,9 @@ end
 
 local function facing(prototype, turns)
   local width, height = facing_size(prototype, turns)
-  -- An inserter faces where it drops, the reverse of its north-facing prototype vectors.
-  local inserter_turns = (turns + 2) % 4
   local entry = {
-    pickup = port(prototype.inserter_pickup_position, width, height, inserter_turns),
-    drop = port(prototype.inserter_drop_position, width, height, inserter_turns),
+    pickup = port(prototype.inserter_pickup_position, width, height, turns),
+    drop = port(prototype.inserter_drop_position, width, height, turns),
     item_out = port(prototype.vector_to_place_result, width, height, turns),
   }
   if prototype.belt_speed then
@@ -230,4 +228,12 @@ function handlers.entity_info(params)
   return info
 end
 
-return {handlers = handlers}
+local info = {handlers = handlers}
+
+-- Pickup, drop, and item_out tiles of a prototype facing direction, as api_entity_info
+-- lists them.
+function info.ports(prototype, direction)
+  return facing(prototype, FACING_TURNS[common.DIRECTION_NAMES[direction]])
+end
+
+return info

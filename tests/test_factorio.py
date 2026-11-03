@@ -272,3 +272,19 @@ def test_set_recipe_forwards_target() -> None:
     api.execute("api_set_recipe", arguments)
     request = json.loads(raw.commands[0].removeprefix("/af "))
     assert (request["method"], request["params"]) == ("set_recipe", arguments)
+
+
+def test_connect_forwards_targets() -> None:
+    raw = FakeRcon({"placed": "inserter", "count": 1})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {
+        "item": "inserter",
+        "pickup_from": 12,
+        "drop_into": 34,
+        "power": [],
+        "count": 1,
+    }
+
+    api.execute("api_connect", arguments)
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert (request["method"], request["params"]) == ("connect", arguments)

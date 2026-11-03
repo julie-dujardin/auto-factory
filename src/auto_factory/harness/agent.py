@@ -25,6 +25,8 @@ top-left. Game positions in API arguments and results are dx/dy offsets in tiles
 the player's current position (positive dx is east, positive dy is south), so they
 change whenever the player moves. Only player.world_position in api_scan is absolute;
 record locations in notes as world positions and subtract it to get offsets again.
+Entity ids from api_scan, api_find, api_place, and api_connect never change, so prefer
+them for entities you act on or build next to.
 Use game_action for known controls instead of reasoning about keyboard letters.
 Use click with the right button and a hold duration to mine resources or entities.
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
@@ -214,7 +216,7 @@ def tool_result(call: Any, content: str) -> dict[str, str]:
 def fell_short(name: str, result: str) -> bool:
     if name == "api_walk_to":
         return json.loads(result).get("reason") != "arrived"
-    if name in {"api_place", "drag_build"}:
+    if name in {"api_place", "api_connect", "drag_build"}:
         return "stopped" in json.loads(result)
     return False
 

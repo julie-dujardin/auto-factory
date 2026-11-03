@@ -414,6 +414,7 @@ def test_fell_short_flags_blocked_walks_and_partial_lines() -> None:
     assert fell_short("api_walk_to", '{"reason":"blocked"}')
     assert not fell_short("api_walk_to", '{"reason":"arrived"}')
     assert fell_short("api_place", '{"count":2,"stopped":"out of build reach"}')
+    assert fell_short("api_connect", '{"count":1,"stopped":"only 1 of the 2 spots"}')
     assert not fell_short("drag_build", '{"placed":{"transport-belt":5}}')
     assert not fell_short("api_mine", '{"reason":"target gone"}')
 

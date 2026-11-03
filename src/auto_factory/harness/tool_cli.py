@@ -13,8 +13,11 @@ TOOLS = {tool["function"]["name"]: tool["function"] for tool in API_TOOLS}
 ARGUMENT_TYPES = {"number": float, "integer": int, "string": str}
 
 
-# Omitted free-text strings mean "any" or "the player", as the schemas describe.
-def empty_value(schema: dict[str, Any]) -> str | bool | None:
+# Omitted fields take the schema's default; omitted free-text strings mean "any" or
+# "the player", as the schemas describe.
+def empty_value(schema: dict[str, Any]) -> Any:
+    if "default" in schema:
+        return schema["default"]
     if schema["type"] == "boolean":
         return False
     if schema["type"] == "string" and "enum" not in schema:
@@ -63,6 +66,14 @@ def parser() -> argparse.ArgumentParser:
             if schema["type"] == "boolean":
                 command.add_argument(
                     flag, action="store_true", default=argparse.SUPPRESS, help=help_text
+                )
+            elif schema["type"] == "array":
+                command.add_argument(
+                    flag,
+                    type=ARGUMENT_TYPES[schema["items"]["type"]],
+                    nargs="*",
+                    default=argparse.SUPPRESS,
+                    help=help_text,
                 )
             else:
                 command.add_argument(

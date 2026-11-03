@@ -244,17 +244,17 @@ function handlers.wait(params)
     condition = condition,
     until_tick = game.tick + math.floor(seconds * 60),
   }
-  local name = params.entity or ""
-  if condition == "crafts" or (condition == "items" and name ~= "") then
-    if name == "" then
+  local targeted = (params.entity or "") ~= "" or (tonumber(params.id) or 0) ~= 0
+  if condition == "crafts" or (condition == "items" and targeted) then
+    if not targeted then
       common.fail("crafts needs an entity")
     end
-    action.entity = entities.find(player, name, common.position_from(player, params))
+    action.entity = entities.target(player, params)
   end
   if condition == "crafts" then
     local ok, finished = pcall(function() return action.entity.products_finished end)
     if not ok then
-      common.fail(name .. " does not count finished crafts; wait for items instead")
+      common.fail(action.entity.name .. " does not count finished crafts; wait for items instead")
     end
     action.baseline = finished
   end

@@ -96,6 +96,7 @@ function handlers.observe(params)
     end
   end
   for _, run in pairs(belts.runs(transport_belts, origin)) do
+    run.entry.id = entities.id(run.head)
     table.insert(candidates, run)
   end
   table.sort(candidates, function(a, b) return a.distance < b.distance end)

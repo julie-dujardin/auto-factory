@@ -40,6 +40,15 @@ OFFSET = {
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
 LINE_COUNT = {"type": "integer", "minimum": 1, "maximum": 50}
+ENTITY_ID = {
+    "type": "integer",
+    "minimum": 0,
+    "default": 0,
+    "description": "An entity id from api_scan, api_find, api_place, or api_connect.",
+}
+TARGET_ID = ENTITY_ID | {
+    "description": "The entity's id; 0 finds it by entity name at dx/dy instead."
+}
 
 
 DESKTOP_TOOLS = [
@@ -154,8 +163,9 @@ API_TOOLS = [
         "items into input, output, fuel, burnt_result, modules, and trash; other "
         "inventories such as chests are items. Their fluids are input_fluids and "
         "output_fluids; pipes and tanks hold fluids. Inserters give held: the stack in "
-        "their hand. Straight transport belt runs are one entry: position is "
-        "the upstream tile and the run covers length tiles toward direction. Belts "
+        "their hand. Entities give an id that stays fixed as the player moves. "
+        "Straight transport belt runs are one entry: position and id are the upstream "
+        "tile's and the run covers length tiles toward direction. Belts "
         "give each lane's item, its count, and flow in items per second; 0 means the "
         "lane is stopped. Underground belts say whether they are the input or output "
         "end. Underground belts and pipes give pair: the other end's position, or "
@@ -335,21 +345,105 @@ API_TOOLS = [
     ),
     _tool(
         "api_place",
-        "Place count items from inventory in a straight row starting at an offset "
-        "from the player, each facing direction, stepping by the entity's size toward "
-        "line_direction; a belt line uses the same value for both. Stops at the first "
-        "tile that is blocked, out of build reach, or out of items, and returns how "
-        "many were placed and the offset of the last one.",
+        "Place count items from inventory in a straight row, each facing direction, "
+        "stepping by the entity's size toward line_direction; a belt line uses the "
+        "same value for both. at says where the first goes relative to the anchor: "
+        "offset centres it dx/dy from the anchor's centre, snapped to the grid; a "
+        "side puts it flush against that side of the anchor, along tiles from the "
+        "side's north or west end; item_out covers a mining drill's output tile, "
+        "pickup and drop an inserter's, ahead the tile past the downstream end of a "
+        "transport belt's straight run, and behind the tile before its upstream end. "
+        "When the player stands in the way they step aside, and stepped_aside says "
+        "how far. Stops at the first tile that "
+        "is blocked, out of build reach, or out of items. Returns how many were "
+        "placed, the offsets of the first and last, snapped_from when snapping moved "
+        "the first, and built: each entity's id and what it takes from, gives to, is "
+        "fed or emptied by, powers, or joins by pipe (fluid_to), with warnings for "
+        "ends that lead nowhere; a belt or pipe line lists only its two ends.",
         _object_schema(
             {
                 "item": {"type": "string"},
-                "dx": OFFSET,
-                "dy": OFFSET,
+                "anchor": ENTITY_ID
+                | {
+                    "description": "Id of the entity to place relative to; 0 is the "
+                    "player, which only takes offset."
+                },
+                "at": {
+                    "type": "string",
+                    "enum": [
+                        "offset",
+                        "north",
+                        "east",
+                        "south",
+                        "west",
+                        "item_out",
+                        "pickup",
+                        "drop",
+                        "ahead",
+                        "behind",
+                    ],
+                    "default": "offset",
+                },
+                "along": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20,
+                    "default": 0,
+                    "description": "For a side: tiles from the side's north or west "
+                    "end to the entity's north or west edge.",
+                },
+                "dx": OFFSET | {"description": "For offset: tiles east of the anchor."},
+                "dy": OFFSET
+                | {"description": "For offset: tiles south of the anchor."},
                 "direction": DIRECTION,
                 "count": LINE_COUNT,
                 "line_direction": DIRECTION,
             },
-            ["item", "dx", "dy", "direction", "count", "line_direction"],
+            [
+                "item",
+                "anchor",
+                "at",
+                "along",
+                "dx",
+                "dy",
+                "direction",
+                "count",
+                "line_direction",
+            ],
+        ),
+    ),
+    _tool(
+        "api_connect",
+        "Place an inserter or electric pole where it connects existing entities, "
+        "choosing its position and facing. An inserter takes from pickup_from and "
+        "drops into drop_into, where a transport belt stands for its whole straight "
+        "run; count inserters go side by side, nearest the middle of the two first. "
+        "An electric pole covers every entity in power with its supply area, in wire "
+        "reach of an existing pole when it can. Tries each fitting spot until one is "
+        "free and in build reach. Returns built and stepped_aside as api_place does.",
+        _object_schema(
+            {
+                "item": {"type": "string"},
+                "pickup_from": ENTITY_ID
+                | {"description": "Entity id for an inserter to take from; else 0."},
+                "drop_into": ENTITY_ID
+                | {"description": "Entity id for an inserter to drop into; else 0."},
+                "power": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 1},
+                    "maxItems": 20,
+                    "default": [],
+                    "description": "Entity ids for an electric pole to power; else "
+                    "empty.",
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": "Inserters to place; a pole is always one.",
+                },
+            },
+            ["item", "pickup_from", "drop_into", "power", "count"],
         ),
     ),
     _tool(
@@ -357,13 +451,14 @@ API_TOOLS = [
         "Move items from the player inventory into a reachable entity.",
         _object_schema(
             {
+                "id": TARGET_ID,
                 "entity": {"type": "string"},
                 "dx": OFFSET,
                 "dy": OFFSET,
                 "item": {"type": "string"},
                 "count": {"type": "integer", "minimum": 1, "maximum": 10000},
             },
-            ["entity", "dx", "dy", "item", "count"],
+            ["id", "entity", "dx", "dy", "item", "count"],
         ),
     ),
     _tool(
@@ -372,6 +467,7 @@ API_TOOLS = [
         "item-on-ground. Returns the count taken per item.",
         _object_schema(
             {
+                "id": TARGET_ID,
                 "entity": {"type": "string"},
                 "dx": OFFSET,
                 "dy": OFFSET,
@@ -387,7 +483,7 @@ API_TOOLS = [
                     "description": "Ignored when item is empty.",
                 },
             },
-            ["entity", "dx", "dy", "item", "count"],
+            ["id", "entity", "dx", "dy", "item", "count"],
         ),
     ),
     _tool(
@@ -395,12 +491,13 @@ API_TOOLS = [
         "Rotate a reachable placed entity clockwise, or counterclockwise when reverse.",
         _object_schema(
             {
+                "id": TARGET_ID,
                 "entity": {"type": "string"},
                 "dx": OFFSET,
                 "dy": OFFSET,
                 "reverse": {"type": "boolean"},
             },
-            ["entity", "dx", "dy", "reverse"],
+            ["id", "entity", "dx", "dy", "reverse"],
         ),
     ),
     _tool(
@@ -411,12 +508,13 @@ API_TOOLS = [
         "inventory.",
         _object_schema(
             {
+                "id": TARGET_ID,
                 "entity": {"type": "string"},
                 "dx": OFFSET,
                 "dy": OFFSET,
                 "recipe": {"type": "string"},
             },
-            ["entity", "dx", "dy", "recipe"],
+            ["id", "entity", "dx", "dy", "recipe"],
         ),
     ),
     _tool(
@@ -432,9 +530,11 @@ API_TOOLS = [
                     "type": "string",
                     "enum": ["crafts", "items", "handcraft"],
                 },
+                "id": TARGET_ID,
                 "entity": {
                     "type": "string",
-                    "description": "Entity name at dx/dy, or empty for the player.",
+                    "description": "Entity name at dx/dy, or empty with id 0 for the "
+                    "player.",
                 },
                 "dx": OFFSET,
                 "dy": OFFSET,
@@ -445,7 +545,7 @@ API_TOOLS = [
                 "count": {"type": "integer", "minimum": 0, "maximum": 10000},
                 "seconds": {"type": "number", "minimum": 1, "maximum": 60},
             },
-            ["condition", "entity", "dx", "dy", "item", "count", "seconds"],
+            ["condition", "id", "entity", "dx", "dy", "item", "count", "seconds"],
         ),
     ),
     _tool(
