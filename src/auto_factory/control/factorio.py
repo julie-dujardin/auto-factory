@@ -114,6 +114,7 @@ class RconFactorioAPI:
             "api_mine": "mine",
             "api_craft": "craft",
             "api_place": "place",
+            "api_underground": "underground",
             "api_connect": "connect",
             "api_insert": "insert",
             "api_take": "take",

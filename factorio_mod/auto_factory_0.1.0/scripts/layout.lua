@@ -90,8 +90,18 @@ local function port_tile(anchor, at)
     end
     return tile_of(at == "pickup" and anchor.pickup_position or anchor.drop_position)
   end
+  if anchor.type == "underground-belt" then
+    local kind = at == "ahead" and "output" or "input"
+    local pair_end = anchor.belt_to_ground_type == kind and anchor or anchor.underground_belt_neighbour
+    if not pair_end then
+      common.fail(entities.label(anchor) .. " has no " .. (at == "ahead" and "exit" or "entrance"))
+    end
+    local step = common.DIRECTION_STEPS[pair_end.direction]
+    local sign = at == "ahead" and 1 or -1
+    return {x = pair_end.position.x + sign * step.x, y = pair_end.position.y + sign * step.y}
+  end
   if anchor.type ~= "transport-belt" then
-    common.fail(at .. " needs a transport belt anchor, not " .. anchor.name)
+    common.fail(at .. " needs a transport belt or underground belt anchor, not " .. anchor.name)
   end
   local run = belt_run(anchor)
   local step = common.DIRECTION_STEPS[anchor.direction]

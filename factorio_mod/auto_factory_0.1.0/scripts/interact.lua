@@ -152,8 +152,8 @@ local function step_aside(player, area)
   end
 end
 
--- Returns why the item could not be placed, or nil and the built entity.
-local function place_one(player, cursor, item, entity, position, direction)
+-- Returns why the item cannot be built at position, else nil with one in the cursor.
+local function load_cursor(player, cursor, item, entity, position, direction)
   if common.distance_squared(player.position, position) > player.build_distance ^ 2 then
     return "the position is outside build reach"
   end
@@ -178,6 +178,15 @@ local function place_one(player, cursor, item, entity, position, direction)
     return "the item cannot be built at "
       .. common.footprint_text(common.origin(player), position, width, height)
       .. (reason and ": " .. reason or "")
+  end
+  return nil
+end
+
+-- Returns why the item could not be placed, or nil and the built entity.
+local function place_one(player, cursor, item, entity, position, direction)
+  local reason = load_cursor(player, cursor, item, entity, position, direction)
+  if reason then
+    return reason
   end
   local before = held_count(player, cursor, item)
   player.build_from_cursor {position = position, direction = direction}
@@ -279,6 +288,88 @@ function handlers.place(params)
     result.snapped_from = common.offset_from(origin, requested)
   end
   return result
+end
+
+local PAIR_TYPES = {["underground-belt"] = true, ["pipe-to-ground"] = true}
+
+local OPPOSITE = {
+  [defines.direction.north] = defines.direction.south,
+  [defines.direction.east] = defines.direction.west,
+  [defines.direction.south] = defines.direction.north,
+  [defines.direction.west] = defines.direction.east,
+}
+
+local function pair_text(entity, origin)
+  local pair = entities.underground_pair(entity)
+  if not pair then
+    return "pairs with nothing"
+  end
+  return "pairs with " .. entities.label(pair) .. " at " .. common.offset_text(origin, pair.position)
+end
+
+-- An underground belt built facing the flow is an entrance; one built facing back at an
+-- unpaired entrance becomes its exit, facing the flow. A pipe-to-ground end faces its
+-- above-ground connection. The engine pairs each new end with the nearest fitting one,
+-- so a leftover end nearby can take either.
+function handlers.underground(params)
+  local player = common.get_player(params)
+  local item = common.required_string(params, "item")
+  local entity = placed_entity(item)
+  if not entity or not PAIR_TYPES[entity.type] then
+    common.fail(item .. " is not an underground belt or pipe-to-ground; use api_place")
+  end
+  local line = common.direction_from(params, "direction")
+  local under = math.floor(common.required_number(params, "under"))
+  local most = entity.max_underground_distance - 1
+  if under < 0 or under > most then
+    common.fail(item .. " passes under 0 to " .. most .. " tiles, not " .. under)
+  end
+  local held = player.get_main_inventory().get_item_count(item)
+  if held < 2 then
+    common.fail("a pair takes 2 " .. item .. "; the player has " .. held)
+  end
+  local start = layout.start(player, params, 1, 1)
+  local finish = line_position(start, line, under + 1, 1)
+  local start_direction, finish_direction = line, OPPOSITE[line]
+  if entity.type == "pipe-to-ground" then
+    start_direction, finish_direction = OPPOSITE[line], line
+  end
+  local cursor = empty_cursor(player)
+  local stood = common.player_position(player)
+  local origin = common.origin(player)
+  local reason = load_cursor(player, cursor, item, entity, finish, finish_direction)
+  restore_cursor(player)
+  if reason then
+    common.fail("the end: " .. reason)
+  end
+  local near, far
+  reason, near = place_one(player, cursor, item, entity, start, start_direction)
+  if reason then
+    common.fail("the start: " .. reason)
+  end
+  reason, far = place_one(player, cursor, item, entity, finish, finish_direction)
+  if reason then
+    player.mine_entity(near, true)
+    common.fail("the end: " .. reason .. "; the start was taken back")
+  end
+  local pair = entities.underground_pair(near)
+  if not pair or pair.unit_number ~= far.unit_number then
+    local message = "the ends did not pair: the start " .. pair_text(near, origin)
+      .. ", the end " .. pair_text(far, origin)
+    player.mine_entity(near, true)
+    player.mine_entity(far, true)
+    common.fail(message .. "; both were taken back")
+  end
+  local built = built_links(player, {near, far})
+  for index, placed in ipairs {near, far} do
+    built[index].direction, built[index].pipes_face = info.shown_facing(placed.prototype, placed.direction)
+  end
+  return {
+    placed = item,
+    under = under,
+    built = built,
+    stepped_aside = stepped_to(player, stood),
+  }
 end
 
 -- Spots where an inserter or pole of item connects the entities params name, and how
@@ -450,13 +541,21 @@ function handlers.rotate(params)
   end
   local direction, pipes_face = info.shown_facing(entity.prototype, entity.direction)
   local origin = common.origin(player)
-  return {
+  local result = {
     entity = name,
     position = common.offset_from(origin, entity.position),
     area = entities.area(entity, origin),
     direction = direction,
     pipes_face = pipes_face,
   }
+  if entity.type == "underground-belt" then
+    result.underground = entity.belt_to_ground_type
+  end
+  if PAIR_TYPES[entity.type] then
+    local pair = entities.underground_pair(entity)
+    result.pair = pair and entities.label(pair) or "unconnected"
+  end
+  return result
 end
 
 function handlers.set_recipe(params)

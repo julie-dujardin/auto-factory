@@ -125,7 +125,7 @@ end
 function entities.by_id(id)
   local entity = storage.entity_ids and storage.entity_ids[id]
   if not entity then
-    common.fail("no entity has id " .. id .. "; ids come from api_scan, api_find, api_place, and api_connect")
+    common.fail("no entity has id " .. id .. "; ids come from api_scan, api_find, api_place, api_underground, and api_connect")
   end
   if not entity.valid then
     storage.entity_ids[id] = nil
@@ -181,7 +181,7 @@ function entities.target(player, params)
   common.fail("no " .. name .. " at " .. requested .. "; nearest: " .. table.concat(offsets, ", "))
 end
 
-local function underground_pair(entity)
+function entities.underground_pair(entity)
   if entity.type == "underground-belt" then
     return entity.underground_belt_neighbour
   end
@@ -402,7 +402,7 @@ function entities.entry(entity, origin, networks)
     entry.underground = entity.belt_to_ground_type
   end
   if entity.type == "underground-belt" or entity.type == "pipe-to-ground" then
-    local pair = underground_pair(entity)
+    local pair = entities.underground_pair(entity)
     entry.pair = pair and common.offset_from(origin, pair.position) or "unconnected"
   end
   if entity.type == "electric-pole" then
@@ -540,6 +540,17 @@ function entities.links(entity, origin)
     links.belt_to = labels(neighbours.outputs)
   end
   links.fluid_to = labels(fluid_neighbours(entity))
+  if entity.type == "underground-belt" then
+    links.underground = entity.belt_to_ground_type
+  end
+  if entity.type == "underground-belt" or entity.type == "pipe-to-ground" then
+    local pair = entities.underground_pair(entity)
+    if pair then
+      links.pair = entities.label(pair)
+    else
+      table.insert(warnings, "unpaired: no other end connects to it underground")
+    end
+  end
   if uses_electricity(entity) and not entity.is_connected_to_electric_network() then
     table.insert(warnings, "not powered")
   end

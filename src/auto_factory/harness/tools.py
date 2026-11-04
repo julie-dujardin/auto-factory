@@ -60,10 +60,33 @@ ENTITY_ID = {
     "type": "integer",
     "minimum": 0,
     "default": 0,
-    "description": "An entity id from api_scan, api_find, api_place, or api_connect.",
+    "description": "An entity id from api_scan, api_find, api_place, api_underground, "
+    "or api_connect.",
 }
 TARGET_ID = ENTITY_ID | {
     "description": "The entity's id; 0 finds it by entity name at dx/dy instead."
+}
+# Where api_place and api_underground put the first entity.
+PLACEMENT = {
+    "anchor": ENTITY_ID
+    | {
+        "description": "Id of the entity to place relative to; 0 is the run's start "
+        "tile, so point and anchor_point northwest put the first's north-west tile at "
+        "tile dx/dy."
+    },
+    "anchor_point": {
+        "type": "string",
+        "enum": [*COMPASS_POINTS, "item_out", "pickup", "drop", "ahead", "behind"],
+        "default": "centre",
+    },
+    "point": {
+        "type": "string",
+        "enum": COMPASS_POINTS,
+        "default": "centre",
+        "description": "Of the first entity, as built facing direction.",
+    },
+    "dx": OFFSET | {"description": "Tiles east of anchor_point."},
+    "dy": OFFSET | {"description": "Tiles south of anchor_point."},
 }
 
 
@@ -470,8 +493,9 @@ API_TOOLS = [
         "dy 0 leaves one free tile east of the anchor, north edges in line. "
         "anchor_point item_out instead covers a mining drill's output tile, pickup and "
         "drop an inserter's, ahead the tile past the downstream end of a transport "
-        "belt's straight run, and behind the tile before its upstream end, ignoring "
-        "point and dx/dy. "
+        "belt's straight run or an underground belt pair's exit, and behind the tile "
+        "before the run's upstream end or the pair's entrance, ignoring point and "
+        "dx/dy. "
         "When the player stands in the way they step aside, and stepped_aside gives "
         "the tile they moved to. Stops at the first tile that "
         "is blocked, out of build reach, or out of items. Returns how many were "
@@ -485,32 +509,7 @@ API_TOOLS = [
         _object_schema(
             {
                 "item": {"type": "string"},
-                "anchor": ENTITY_ID
-                | {
-                    "description": "Id of the entity to place relative to; 0 is the "
-                    "run's start tile, so point and anchor_point northwest put the "
-                    "first's north-west tile at tile dx/dy."
-                },
-                "anchor_point": {
-                    "type": "string",
-                    "enum": [
-                        *COMPASS_POINTS,
-                        "item_out",
-                        "pickup",
-                        "drop",
-                        "ahead",
-                        "behind",
-                    ],
-                    "default": "centre",
-                },
-                "point": {
-                    "type": "string",
-                    "enum": COMPASS_POINTS,
-                    "default": "centre",
-                    "description": "Of the first entity, as built facing direction.",
-                },
-                "dx": OFFSET | {"description": "Tiles east of anchor_point."},
-                "dy": OFFSET | {"description": "Tiles south of anchor_point."},
+                **PLACEMENT,
                 "direction": FACING,
                 "count": LINE_COUNT,
                 "line_direction": DIRECTION,
@@ -524,16 +523,40 @@ API_TOOLS = [
             },
             [
                 "item",
-                "anchor",
-                "anchor_point",
-                "point",
-                "dx",
-                "dy",
+                *PLACEMENT,
                 "direction",
                 "count",
                 "line_direction",
                 "gap",
             ],
+        ),
+    ),
+    _tool(
+        "api_underground",
+        "Place an underground belt or pipe-to-ground pair: one end at the start and "
+        "the other toward direction with under tiles between them, passing under "
+        "whatever stands there. The start goes where api_place would put its first entity. An "
+        "underground belt pair's start is its entrance, so items flow toward "
+        "direction; api_rotate on either end reverses the pair. Pipe-to-ground ends "
+        "face away from each other: the start's pipe connection back along the line, "
+        "the end's ahead. Builds nothing when either end is blocked or out of build "
+        "reach, and takes both back when they pair with other ends instead of each "
+        "other. Returns built as api_place does, start first, with each end's "
+        "direction or pipes_face and pair, and stepped_aside.",
+        _object_schema(
+            {
+                "item": {"type": "string"},
+                **PLACEMENT,
+                "direction": DIRECTION,
+                "under": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10,
+                    "description": "Tiles between the two ends; api_entity_info gives "
+                    "the most as underground_max minus 1.",
+                },
+            },
+            ["item", *PLACEMENT, "direction", "under"],
         ),
     ),
     _tool(

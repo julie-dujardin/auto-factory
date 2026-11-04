@@ -30,8 +30,9 @@ an even side. Entities larger than one tile also give area: the tiles they cover
 inclusive dx and dy ranges. A 3x3 machine at dx=1 dy=1 has area dx [0, 2] and
 dy [0, 2], a 2x2 one at dx=0.5 dy=0.5 has dx [0, 1] and dy [0, 1]; messages write
 these dx=0..2 dy=0..2. Supply, mining, and patch areas come as the same ranges.
-Entity ids from api_scan, api_find, api_place, and api_connect never change, so prefer
-them for entities you act on, and give one as api_place's anchor to build next to it.
+Entity ids from api_scan, api_find, api_place, api_underground, and api_connect never
+change, so prefer them for entities you act on, and give one as api_place's anchor to
+build next to it.
 Use game_action for known controls instead of reasoning about keyboard letters.
 Use click with the right button and a hold duration to mine resources or entities.
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
@@ -107,15 +108,15 @@ the free half; placed over two belts, it mixes their items. Splitters and underg
 belts can be placed over existing belts, which return to the inventory.
 
 An underground belt pair carries a belt under anything, with up to 4 tiles between
-its ends (6 fast, 8 express, 10 turbo). Place the entrance before the obstacle and the
-exit after it with separate api_place calls, both facing the flow: the second becomes
-the exit of the nearest entrance of the same tier facing the same way behind it.
-api_scan shows a pair as one part of its belt line, or no exit if an entrance has none.
+its ends (6 fast, 8 express, 10 turbo). api_underground places both: the entrance on
+the tile before the obstacle and the exit on the tile after it, both facing the flow.
+api_rotate on either end reverses the pair. api_scan shows a pair as one part of its
+belt line, or no exit if an entrance has none.
 
 A pipe-to-ground pair carries fluid under anything, with up to 9 tiles between its
 ends. Each end faces its above-ground pipe connection and connects underground on the
-opposite side, so the two ends of a pair face away from each other. api_scan shows
-where each end's pair is.
+opposite side, so the two ends of a pair face away from each other; api_underground
+places both. api_scan shows where each end's pair is.
 """
 
 

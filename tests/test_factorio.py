@@ -335,3 +335,22 @@ def test_connect_forwards_targets() -> None:
     api.execute("api_connect", arguments)
     request = json.loads(raw.commands[0].removeprefix("/af "))
     assert (request["method"], request["params"]) == ("connect", arguments)
+
+
+def test_underground_forwards_pair() -> None:
+    raw = FakeRcon({"placed": "underground-belt", "under": 3})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {
+        "item": "underground-belt",
+        "anchor": 7,
+        "anchor_point": "ahead",
+        "point": "centre",
+        "dx": 0,
+        "dy": 0,
+        "direction": "east",
+        "under": 3,
+    }
+
+    api.execute("api_underground", arguments)
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert (request["method"], request["params"]) == ("underground", arguments)
