@@ -52,8 +52,9 @@ As soon as you know what you'll be working with, lookup the entities & recipes,
 in one single bulk run, before starting to plan.
 
 Never guess an ID either. When unsure of the exact name of an item, fluid, recipe,
-entity, entity type, technology, or entity status, find it with api_search. An error
-for an unknown ID lists similar IDs: pick from them or search, never retry a variant.
+entity, entity type, or entity status, find it with api_search; for a technology, use
+api_technologies. An error for an unknown ID lists similar IDs: pick from them or
+search, never retry a variant.
 
 Your thinking is not shown to you again, so keep your plan in notes: whenever thinking
 settles a plan, a layout, or a fix, write it with notes in the same turn as your first

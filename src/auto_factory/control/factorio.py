@@ -18,6 +18,7 @@ LIST_FIELDS: dict[str, list[tuple[str, ...]]] = {
     "find": [("entities",)],
     "resources": [("patches",)],
     "research": [("queue",)],
+    "technologies": [("technologies",)],
     "technology": [
         ("unlocks_recipes",),
         ("effects",),
@@ -122,6 +123,7 @@ class RconFactorioAPI:
             "api_recipe": "recipe",
             "api_entity_info": "entity_info",
             "api_search": "search",
+            "api_technologies": "technologies",
             "api_technology": "technology",
         }
         try:

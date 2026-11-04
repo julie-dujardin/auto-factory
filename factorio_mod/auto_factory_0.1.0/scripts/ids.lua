@@ -3,7 +3,12 @@ local common = require("scripts.common")
 local ids = {handlers = {}}
 
 local PROTOTYPE_KINDS = {item = true, fluid = true, recipe = true, entity = true, technology = true}
-local KINDS = {"item", "fluid", "recipe", "entity", "entity_type", "technology", "status"}
+-- Technologies are searched by api_technologies.
+local KINDS = {"item", "fluid", "recipe", "entity", "entity_type", "status"}
+local SEARCHABLE = {}
+for _, kind in pairs(KINDS) do
+  SEARCHABLE[kind] = true
+end
 local SEARCH_LIMIT = 10
 local SIMILAR_LIMIT = 8
 
@@ -13,8 +18,25 @@ function ids.selectable(prototype)
   return prototype.selectable_in_game and box.left_top.x < box.right_bottom.x
 end
 
--- Hidden prototypes and unselectable entities are valid IDs but never suggested.
+-- Hidden recipes and recycling (Space Age), which only undoes crafts, are never listed.
+function ids.listed_recipe(prototype)
+  if prototype.hidden then
+    return false
+  end
+  for _, category in pairs(prototype.categories) do
+    if category == "recycling" then
+      return false
+    end
+  end
+  return true
+end
+
+-- Hidden prototypes, unlisted recipes, and unselectable entities are valid IDs but
+-- never suggested.
 local function suggested(kind, prototype)
+  if kind == "recipe" then
+    return ids.listed_recipe(prototype)
+  end
   if prototype.hidden then
     return false
   end
@@ -74,9 +96,10 @@ local function edit_distance(a, b)
   return previous[#b]
 end
 
--- Each query word scores 2 when it is a whole word of the ID and 1 when it is part of
--- one; ties go to fewer edits. An ID matching no word is kept only as a likely typo.
-local function closest(query, kinds, limit)
+-- The candidates resembling query, best first. Each query word scores 2 when it is a
+-- whole word of the ID and 1 when it is part of one; ties go to fewer edits. An ID
+-- matching no word is kept only as a likely typo.
+function ids.ranked(query, candidates)
   query = string.lower(query)
   local words = {}
   for word in string.gmatch(query, "[^%s%-_]+") do
@@ -84,28 +107,22 @@ local function closest(query, kinds, limit)
   end
   local typos = math.max(1, math.floor(#query / 4))
   local ranked = {}
-  local seen = {}
-  for _, kind in pairs(kinds) do
-    for _, name in pairs(names(kind)) do
-      if not seen[name] then
-        seen[name] = true
-        local parts = {}
-        for part in string.gmatch(name, "[^%-_]+") do
-          parts[part] = true
-        end
-        local score = 0
-        for _, word in pairs(words) do
-          if parts[word] then
-            score = score + 2
-          elseif string.find(name, word, 1, true) then
-            score = score + 1
-          end
-        end
-        local edits = edit_distance(query, name)
-        if score > 0 or edits <= typos then
-          table.insert(ranked, {name = name, score = score, edits = edits})
-        end
+  for _, name in pairs(candidates) do
+    local parts = {}
+    for part in string.gmatch(name, "[^%-_]+") do
+      parts[part] = true
+    end
+    local score = 0
+    for _, word in pairs(words) do
+      if parts[word] then
+        score = score + 2
+      elseif string.find(name, word, 1, true) then
+        score = score + 1
       end
+    end
+    local edits = edit_distance(query, name)
+    if score > 0 or edits <= typos then
+      table.insert(ranked, {name = name, score = score, edits = edits})
     end
   end
   table.sort(ranked, function(a, b)
@@ -118,8 +135,26 @@ local function closest(query, kinds, limit)
     return a.name < b.name
   end)
   local result = {}
-  for index = 1, math.min(limit, #ranked) do
-    result[index] = ranked[index].name
+  for index, each in ipairs(ranked) do
+    result[index] = each.name
+  end
+  return result
+end
+
+local function closest(query, kinds, limit)
+  local candidates = {}
+  local seen = {}
+  for _, kind in pairs(kinds) do
+    for _, name in pairs(names(kind)) do
+      if not seen[name] then
+        seen[name] = true
+        table.insert(candidates, name)
+      end
+    end
+  end
+  local result = ids.ranked(query, candidates)
+  for index = limit + 1, #result do
+    result[index] = nil
   end
   return result
 end
@@ -135,7 +170,8 @@ function ids.check(name, ...)
   local label = (string.gsub(table.concat(kinds, " or "), "_", " "))
   local similar = closest(name, kinds, SIMILAR_LIMIT)
   if #similar == 0 then
-    common.fail("unknown " .. label .. ": " .. name .. "; find the ID with api_search")
+    local finder = kinds[1] == "technology" and "api_technologies" or "api_search"
+    common.fail("unknown " .. label .. ": " .. name .. "; find the ID with " .. finder)
   end
   common.fail("unknown " .. label .. ": " .. name .. "; similar: " .. table.concat(similar, ", "))
 end
@@ -146,7 +182,7 @@ function ids.handlers.search(params)
   local kinds = KINDS
   if kind ~= "any" then
     kinds = {kind}
-    if not PROTOTYPE_KINDS[kind] and kind ~= "entity_type" and kind ~= "status" then
+    if not SEARCHABLE[kind] then
       common.fail("kind must be any or one of " .. table.concat(KINDS, ", "))
     end
   end

@@ -3,23 +3,8 @@ local ids = require("scripts.ids")
 
 local research = {handlers = {}}
 
--- Force modifiers that change how the factory or the character performs; all default to 0.
--- The scan's player distances already include the reach bonuses.
-local BONUSES = {
-  "mining_drill_productivity_bonus",
-  "inserter_stack_size_bonus",
-  "bulk_inserter_capacity_bonus",
-  "belt_stack_size_bonus",
-  "laboratory_speed_modifier",
-  "laboratory_productivity_bonus",
-  "worker_robots_speed_modifier",
-  "worker_robots_storage_bonus",
-  "worker_robots_battery_modifier",
-  "character_inventory_slots_bonus",
-  "character_running_speed_modifier",
-  "manual_crafting_speed_modifier",
-  "manual_mining_speed_modifier",
-}
+local STATUSES = {available = true, queued = true, locked = true, researched = true, any = true}
+local COMPLETIONS = {labs = true, trigger = true, any = true}
 
 local function ready(technology)
   for _, prerequisite in pairs(technology.prerequisites) do
@@ -43,6 +28,14 @@ local function cost(technology)
   }
 end
 
+local function total_packs(technology)
+  local per_unit = 0
+  for _, ingredient in pairs(technology.research_unit_ingredients) do
+    per_unit = per_unit + ingredient.amount
+  end
+  return per_unit * technology.research_unit_count
+end
+
 local function trigger_entry(trigger)
   return {
     type = trigger.type,
@@ -63,23 +56,6 @@ local function progress(force, technology)
   return fraction > 0 and common.rounded(fraction) or nil
 end
 
-local function bonuses(force)
-  local result = {}
-  for _, field in pairs(BONUSES) do
-    if force[field] ~= 0 then
-      result[field] = common.rounded(force[field])
-    end
-  end
-  local productivity = {}
-  for name, recipe in pairs(force.recipes) do
-    if recipe.productivity_bonus ~= 0 then
-      productivity[name] = common.rounded(recipe.productivity_bonus)
-    end
-  end
-  result.recipe_productivity = next(productivity) and productivity or nil
-  return result
-end
-
 -- The unresearched technologies this one depends on, each after its own prerequisites.
 local function missing_prerequisites(technology)
   local order = {}
@@ -97,21 +73,82 @@ local function missing_prerequisites(technology)
   return order
 end
 
-local function status(force, technology)
+local function queue_positions(force)
+  local positions = {}
+  for index, technology in pairs(force.research_queue or {}) do
+    positions[technology.name] = index
+  end
+  return positions
+end
+
+local function status(technology, queued)
   if technology.researched then
     return "researched"
   end
   if not technology.enabled then
     return "disabled"
   end
-  for index, queued in pairs(force.research_queue or {}) do
-    if queued.name == technology.name then
-      return index == 1 and "researching" or "queued"
-    end
+  local position = queued[technology.name]
+  if position then
+    return position == 1 and "researching" or "queued"
   end
   return ready(technology) and "available" or "locked"
 end
 
+local function unlocked_recipes(prototype)
+  local recipes = {}
+  for _, effect in pairs(prototype.effects or {}) do
+    if effect.type == "unlock-recipe" and ids.listed_recipe(prototypes.recipe[effect.recipe]) then
+      table.insert(recipes, effect.recipe)
+    end
+  end
+  return recipes
+end
+
+local function unlocks_product(prototype, product)
+  if product == "" then
+    return true
+  end
+  for _, recipe in pairs(unlocked_recipes(prototype)) do
+    if recipe == product then
+      return true
+    end
+    -- Emptying a barrel only returns fluid that was already made elsewhere.
+    local recipe_prototype = prototypes.recipe[recipe]
+    if recipe_prototype.subgroup.name ~= "empty-barrel" then
+      for _, each in pairs(recipe_prototype.products) do
+        if each.name == product then
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
+-- With packs given, only lab technologies needing no other pack match.
+local function needs_only(technology, packs)
+  if not next(packs) then
+    return true
+  end
+  if technology.prototype.research_trigger then
+    return false
+  end
+  for _, ingredient in pairs(technology.research_unit_ingredients) do
+    if not packs[ingredient.name] then
+      return false
+    end
+  end
+  return true
+end
+
+local function level(technology)
+  local prototype = technology.prototype
+  return prototype.max_level > prototype.level and technology.level or nil
+end
+
+-- TODO: a tool listing the research bonuses in effect (force modifiers such as
+-- mining_drill_productivity_bonus, and per-recipe productivity).
 function research.state(force)
   local current = force.current_research
   local previous = force.previous_research
@@ -119,21 +156,19 @@ function research.state(force)
   for _, technology in pairs(force.research_queue or {}) do
     table.insert(queue, technology.name)
   end
-  local available = {}
-  local triggers = {}
+  local queued = queue_positions(force)
+  local available = 0
+  local triggers = 0
   local researched = 0
-  for name, technology in pairs(force.technologies) do
-    if technology.researched then
+  for _, technology in pairs(force.technologies) do
+    local state = status(technology, queued)
+    if state == "researched" then
       researched = researched + 1
-    end
-    if technology.enabled and not technology.researched and ready(technology) then
-      local trigger = technology.prototype.research_trigger
-      if trigger then
-        triggers[name] = trigger_entry(trigger)
+    elseif state == "available" and not technology.prototype.hidden then
+      if technology.prototype.research_trigger then
+        triggers = triggers + 1
       else
-        local entry = cost(technology)
-        entry.progress = progress(force, technology)
-        available[name] = entry
+        available = available + 1
       end
     end
   end
@@ -142,11 +177,85 @@ function research.state(force)
     progress = current and common.rounded(force.research_progress),
     queue = queue,
     last_researched = previous and previous.name,
+    researched = researched,
     available = available,
     triggers = triggers,
-    researched = researched,
-    bonuses = bonuses(force),
   }
+end
+
+function research.handlers.technologies(params)
+  local player = common.get_player(params)
+  local force = player.force
+  local query = params.query or ""
+  local wanted = params.status or "available"
+  if not STATUSES[wanted] then
+    common.fail("status must be available, queued, locked, researched, or any")
+  end
+  local completes_by = params.completes_by or "any"
+  if not COMPLETIONS[completes_by] then
+    common.fail("completes_by must be labs, trigger, or any")
+  end
+  local packs = {}
+  for _, pack in pairs(params.packs or {}) do
+    packs[ids.check(pack, "item")] = true
+  end
+  local unlocks = params.unlocks or ""
+  if unlocks ~= "" then
+    ids.check(unlocks, "item", "fluid", "recipe")
+  end
+  local limit = math.max(1, math.min(50, math.floor(common.required_number(params, "limit"))))
+
+  local queued = queue_positions(force)
+  local states = {}
+  local names = {}
+  for name, technology in pairs(force.technologies) do
+    local prototype = technology.prototype
+    local state = status(technology, queued)
+    local completion = prototype.research_trigger and "trigger" or "labs"
+    if not prototype.hidden
+      and state ~= "disabled"
+      and (wanted == "any" or wanted == state or (wanted == "queued" and state == "researching"))
+      and (completes_by == "any" or completes_by == completion)
+      and needs_only(technology, packs)
+      and unlocks_product(prototype, unlocks)
+    then
+      states[name] = state
+      table.insert(names, name)
+    end
+  end
+  if query ~= "" then
+    names = ids.ranked(query, names)
+  else
+    local totals = {}
+    for _, name in pairs(names) do
+      totals[name] = total_packs(force.technologies[name])
+    end
+    table.sort(names, function(a, b)
+      if totals[a] ~= totals[b] then
+        return totals[a] < totals[b]
+      end
+      return a < b
+    end)
+  end
+
+  local results = {}
+  for index = 1, math.min(limit, #names) do
+    local technology = force.technologies[names[index]]
+    local trigger = technology.prototype.research_trigger
+    local recipes = unlocked_recipes(technology.prototype)
+    local state = states[technology.name]
+    results[index] = {
+      technology = technology.name,
+      status = state,
+      level = level(technology),
+      cost = not trigger and cost(technology) or nil,
+      trigger = trigger and trigger_entry(trigger),
+      progress = progress(force, technology),
+      unlocks = next(recipes) and recipes or nil,
+      missing = state == "locked" and #missing_prerequisites(technology) or nil,
+    }
+  end
+  return {matched = #names, technologies = results}
 end
 
 function research.handlers.technology(params)
@@ -155,12 +264,9 @@ function research.handlers.technology(params)
   local force = player.force
   local technology = force.technologies[name]
   local prototype = technology.prototype
-  local recipes = {}
   local effects = {}
   for _, effect in pairs(prototype.effects or {}) do
-    if effect.type == "unlock-recipe" then
-      table.insert(recipes, effect.recipe)
-    elseif not effect.hidden then
+    if effect.type ~= "unlock-recipe" and not effect.hidden then
       effect.hidden = nil
       table.insert(effects, effect)
     end
@@ -178,12 +284,12 @@ function research.handlers.technology(params)
   local trigger = prototype.research_trigger
   return {
     technology = name,
-    status = status(force, technology),
-    level = prototype.max_level > prototype.level and technology.level or nil,
+    status = status(technology, queue_positions(force)),
+    level = level(technology),
     cost = not trigger and cost(technology) or nil,
     trigger = trigger and trigger_entry(trigger),
     progress = progress(force, technology),
-    unlocks_recipes = recipes,
+    unlocks_recipes = unlocked_recipes(prototype),
     effects = effects,
     prerequisites = prerequisites,
     missing_prerequisites = missing_prerequisites(technology),

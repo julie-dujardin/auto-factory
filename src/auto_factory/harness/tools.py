@@ -205,11 +205,9 @@ API_TOOLS = [
         "and output_priority: left, right, or none, seen facing their direction; and "
         "filter: the item sent out the output_priority side and the rest out the other. "
         "research gives the current technology and its progress fraction, the queue, "
-        "last_researched, available: each lab technology whose prerequisites are "
-        "researched with its cost of units, science packs per unit, and seconds per "
-        "unit, and progress when partly researched; triggers: technologies that "
-        "complete on an action instead, with what it needs; and bonuses: research "
-        "bonuses in effect.",
+        "last_researched, researched: how many technologies are done, available: how "
+        "many lab technologies could be queued now, and triggers: how many complete "
+        "on an action instead; api_technologies lists them.",
         _object_schema(
             {"radius": {"type": "number", "minimum": 2, "maximum": 64}},
             ["radius"],
@@ -308,8 +306,7 @@ API_TOOLS = [
         "source, and whether you can already craft that machine. locked lists "
         "recipes not yet researched with the technologies that unlock them; "
         "include_locked gives them in full, marked unlocked false with unlocked_by. "
-        "Rates ignore modules, beacons, and research bonuses; api_scan lists the "
-        "bonuses.",
+        "Rates ignore modules, beacons, and research bonuses.",
         _object_schema(
             {
                 "item": {
@@ -346,7 +343,8 @@ API_TOOLS = [
         "api_search",
         "Find exact IDs from words or a partial or misspelled name. Returns the "
         "closest IDs per kind, best first: items, fluids, recipes, entities, "
-        "entity types (for api_find's type), technologies, and entity statuses.",
+        "entity types (for api_find's type), and entity statuses. api_technologies "
+        "finds technologies.",
         _object_schema(
             {
                 "query": {
@@ -363,12 +361,56 @@ API_TOOLS = [
                         "recipe",
                         "entity",
                         "entity_type",
-                        "technology",
                         "status",
                     ],
                 },
             },
             ["query", "kind"],
+        ),
+    ),
+    _tool(
+        "api_technologies",
+        "List technologies, e.g. what can be researched now, what unlocks a recipe "
+        "for an item, or what the science packs you make can pay for. Returns "
+        "matched: how many match, and the first limit, best match first when there "
+        "is a query, else cheapest first. Each gives status (researched, researching, "
+        "queued, available, or locked); cost: units, science packs per unit, and "
+        "seconds per unit; or trigger: the action that completes it instead; "
+        "progress when partly researched; unlocks: the recipes it unlocks; and for "
+        "locked ones missing: how many unresearched technologies it still needs. "
+        "api_technology gives one in full.",
+        _object_schema(
+            {
+                "query": {
+                    "type": "string",
+                    "description": "Words or a partial or misspelled technology name, "
+                    "e.g. oil processing. Empty matches any.",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["available", "queued", "locked", "researched", "any"],
+                    "description": "available: could be queued now; queued includes "
+                    "the one being researched.",
+                },
+                "completes_by": {
+                    "type": "string",
+                    "enum": ["labs", "trigger", "any"],
+                },
+                "packs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": [],
+                    "description": "Science pack items; only lab technologies needing "
+                    "no other pack match. Empty matches any.",
+                },
+                "unlocks": {
+                    "type": "string",
+                    "description": "Exact item, fluid, or recipe name; only "
+                    "technologies unlocking a recipe for it match. Empty matches any.",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            ["query", "status", "completes_by", "packs", "unlocks", "limit"],
         ),
     ),
     _tool(
@@ -611,8 +653,8 @@ API_TOOLS = [
     ),
     _tool(
         "api_research",
-        "Queue a lab technology for research. The scan lists which are available; "
-        "api_technology says what a locked one needs first.",
+        "Queue a lab technology for research. api_technologies lists the available "
+        "ones; api_technology says what a locked one needs first.",
         _object_schema(
             {"technology": {"type": "string"}},
             ["technology"],

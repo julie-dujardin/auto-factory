@@ -37,7 +37,7 @@ end
 local function craftable_items(force)
   local items = {}
   for _, recipe in pairs(force.recipes) do
-    if recipe.enabled then
+    if recipe.enabled and ids.listed_recipe(recipe.prototype) then
       for _, product in pairs(recipe.prototype.products) do
         items[product.name] = true
       end
@@ -119,7 +119,7 @@ local function recipes_making(name, force, crafters, craftable, include_locked)
   for recipe_name, recipe in pairs(prototypes.recipe) do
     local made = amounts(recipe.products)[name]
     -- Emptying a barrel only returns fluid that was already made elsewhere.
-    if made and not recipe.hidden and recipe.subgroup.name ~= "empty-barrel" then
+    if made and ids.listed_recipe(recipe) and recipe.subgroup.name ~= "empty-barrel" then
       local unlocked = force.recipes[recipe_name].enabled
       local technologies = unlocked and {} or unlocking_technologies(recipe_name)
       if unlocked or include_locked then

@@ -202,7 +202,7 @@ def test_empty_lua_arrays_become_lists() -> None:
         {
             "entities": {},
             "resources": {},
-            "research": {"queue": {}, "available": {}, "triggers": {}},
+            "research": {"queue": {}, "available": 0, "triggers": 0},
         }
     )
     api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
@@ -210,7 +210,7 @@ def test_empty_lua_arrays_become_lists() -> None:
     assert api.observe(8) == {
         "entities": [],
         "resources": {},
-        "research": {"queue": [], "available": {}, "triggers": {}},
+        "research": {"queue": [], "available": 0, "triggers": 0},
     }
 
 
@@ -286,6 +286,24 @@ def test_technology_restores_empty_lists() -> None:
         "missing_prerequisites": [],
         "successors": [],
     }
+
+
+def test_technologies_restores_an_empty_list() -> None:
+    raw = FakeRcon({"matched": 0, "technologies": {}})
+    api = RconFactorioAPI("localhost", 27015, "secret", client=raw)
+    arguments = {
+        "query": "",
+        "status": "available",
+        "completes_by": "labs",
+        "packs": ["automation-science-pack"],
+        "unlocks": "",
+        "limit": 10,
+    }
+
+    result = json.loads(api.execute("api_technologies", arguments))
+    request = json.loads(raw.commands[0].removeprefix("/af "))
+    assert (request["method"], request["params"]) == ("technologies", arguments)
+    assert result == {"matched": 0, "technologies": []}
 
 
 def test_set_recipe_forwards_target() -> None:
