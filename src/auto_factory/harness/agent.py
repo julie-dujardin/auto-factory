@@ -51,7 +51,7 @@ where it takes and puts items and fluids: look it up with api_entity_info before
 laying out machines, inserters, belts, or pipes. Lookups are cheap and run together,
 so make them in bulk: in one turn, call api_recipe for every item involved and
 api_entity_info for every entity you may place, inserters and poles included.
-As soon as you know what you'll be working with, lookup the entities & recipes,
+As soon as you know what you'll be working with, lookup the entities, recipes, machines, etc,
 in one single bulk run, before starting to plan.
 
 Never guess an ID either. When unsure of the exact name of an item, fluid, recipe,

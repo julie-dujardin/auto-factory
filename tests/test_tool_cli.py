@@ -72,7 +72,7 @@ def test_schema_defaults_fill_omitted_fields(monkeypatch, factorio) -> None:
     )
 
     arguments = factorio.calls[0][1]
-    assert arguments | {"anchor": 0, "at": "offset", "along": 0} == arguments
+    assert arguments | {"anchor": 0, "at": "offset", "along": 0, "gap": 0} == arguments
 
 
 def test_array_flags_take_several_values(monkeypatch, factorio) -> None:

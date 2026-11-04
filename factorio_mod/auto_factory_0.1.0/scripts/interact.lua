@@ -241,11 +241,11 @@ function handlers.place(params)
   local width, height = layout.footprint(entity, direction)
   local start, requested = layout.start(player, params, width, height)
   local stood = common.player_position(player)
-  -- Copies sit edge to edge.
   local spacing = height
   if line == defines.direction.east or line == defines.direction.west then
     spacing = width
   end
+  spacing = spacing + math.max(0, math.floor(tonumber(params.gap) or 0))
   -- Tiles count as placed but build no entity.
   local placed, built, stopped = 0, {}, nil
   for index = 0, count - 1 do

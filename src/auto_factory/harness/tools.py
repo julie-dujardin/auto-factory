@@ -452,8 +452,8 @@ API_TOOLS = [
     _tool(
         "api_place",
         "Place count items from inventory in a straight row, each facing direction, "
-        "stepping by the entity's size toward line_direction; a belt line uses the "
-        "same value for both. at says where the first goes relative to the anchor: "
+        "stepping by the entity's size plus gap toward line_direction; a belt line "
+        "uses the same value for both. at says where the first goes relative to the anchor: "
         "offset centres it dx/dy from the anchor's centre, snapped to the grid; a "
         "side puts it flush against that side of the anchor, along tiles from the "
         "side's north or west end; item_out covers a mining drill's output tile, "
@@ -507,6 +507,13 @@ API_TOOLS = [
                 "direction": FACING,
                 "count": LINE_COUNT,
                 "line_direction": DIRECTION,
+                "gap": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20,
+                    "default": 0,
+                    "description": "Empty tiles between neighbouring copies.",
+                },
             },
             [
                 "item",
@@ -518,6 +525,7 @@ API_TOOLS = [
                 "direction",
                 "count",
                 "line_direction",
+                "gap",
             ],
         ),
     ),
