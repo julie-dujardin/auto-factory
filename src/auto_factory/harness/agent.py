@@ -72,9 +72,9 @@ Completing or failing the goal ends the run.
 
 Every turn is slow: return every tool call you can already decide in one turn, e.g.
 one api_take per full furnace in reach, or api_walk_to then api_place. They run in
-order; the chain stops after an error, a blocked walk, a partial placement,
-complete_task, or fail_task, and skips the calls after it. Use the next observations
-to verify the chain's effect.
+order; the chain stops after an error, a walk that does not arrive, a partial
+placement, complete_task, or fail_task, and skips the calls after it. Use the next
+observations to verify the chain's effect.
 
 Keep each turn's thinking short: a turn that thinks too long is cut off before it
 calls a tool. When a plan grows long, record what you have decided with notes and work

@@ -10,8 +10,16 @@ local handlers = actions.handlers
 local MAX_ACTION_TICKS = 60 * 60
 local STUCK_TICKS = 30
 -- Sliding along an obstacle still moves the character, so blocking is judged by
--- progress toward the target. 8-way walking is at worst cos(22.5°) efficient.
+-- progress along the path. 8-way walking is at worst cos(22.5°) efficient.
 local MIN_WALK_PROGRESS = 0.5
+-- Paths are planned for a box this much wider than the character on each side, so
+-- 8-way steering around the path clears corners; tight gaps fall back to no margin.
+local PATH_MARGIN = 0.15
+-- How far ahead along the path the character steers, in tiles.
+local LOOKAHEAD = 1
+local MAX_REPLANS = 3
+local FREE_TILE_RADIUS = 10
+local TAN_22_5 = 0.4142
 
 function actions.ensure_storage()
   storage.actions = storage.actions or {}
@@ -64,49 +72,141 @@ function actions.current_summary(player)
   return action and summary(player, action)
 end
 
-local function walk_direction(dx, dy, tolerance)
-  local east = dx > tolerance
-  local west = dx < -tolerance
-  local south = dy > tolerance
-  local north = dy < -tolerance
-  if north and east then return defines.direction.northeast end
-  if north and west then return defines.direction.northwest end
-  if south and east then return defines.direction.southeast end
-  if south and west then return defines.direction.southwest end
-  if north then return defines.direction.north end
-  if south then return defines.direction.south end
-  if east then return defines.direction.east end
-  if west then return defines.direction.west end
-  return nil
+-- The nearest of the 8 walking directions to a vector.
+local function heading(dx, dy)
+  local ax, ay = math.abs(dx), math.abs(dy)
+  if ay <= ax * TAN_22_5 then
+    return dx > 0 and defines.direction.east or defines.direction.west
+  elseif ax <= ay * TAN_22_5 then
+    return dy > 0 and defines.direction.south or defines.direction.north
+  elseif dy < 0 then
+    return dx > 0 and defines.direction.northeast or defines.direction.northwest
+  else
+    return dx > 0 and defines.direction.southeast or defines.direction.southwest
+  end
+end
+
+local function distance(first, second)
+  return math.sqrt(common.distance_squared(first, second))
+end
+
+-- How far along the segment from a to b position projects, from 0 at a to 1 at b.
+local function progress_along(a, b, position)
+  local length_squared = common.distance_squared(a, b)
+  if length_squared == 0 then
+    return 1
+  end
+  return ((position.x - a.x) * (b.x - a.x) + (position.y - a.y) * (b.y - a.y)) / length_squared
+end
+
+-- A point LOOKAHEAD tiles past position's projection onto the segment, capped at b.
+-- Steering at it pulls the character back onto the segment.
+local function steering_point(a, b, position)
+  local length = distance(a, b)
+  local along = math.max(0, progress_along(a, b, position)) * length + LOOKAHEAD
+  if along >= length then
+    return b
+  end
+  return {x = a.x + (b.x - a.x) * along / length, y = a.y + (b.y - a.y) * along / length}
+end
+
+local function plan_path(player, action)
+  local character = player.character
+  local box = character.prototype.collision_box
+  local margin = action.margin
+  action.path = nil
+  action.checkpoint_tick = nil
+  action.path_id = player.surface.request_path {
+    bounding_box = {
+      {box.left_top.x - margin, box.left_top.y - margin},
+      {box.right_bottom.x + margin, box.right_bottom.y + margin},
+    },
+    collision_mask = character.prototype.collision_mask,
+    start = player.position,
+    goal = action.goal,
+    force = player.force,
+    radius = 0.5,
+    entity_to_ignore = character,
+    pathfind_flags = {cache = false, prefer_straight_paths = true},
+  }
+end
+
+local function follow_path(player, action, waypoints)
+  local path = {player.position}
+  for _, waypoint in ipairs(waypoints) do
+    table.insert(path, waypoint.position)
+  end
+  table.insert(path, action.goal)
+  -- rest[i]: path length from waypoint i to the goal.
+  local rest = {[#path] = 0}
+  for i = #path - 1, 1, -1 do
+    rest[i] = rest[i + 1] + distance(path[i], path[i + 1])
+  end
+  action.path = path
+  action.rest = rest
+  action.next = 2
+end
+
+function actions.on_script_path_request_finished(event)
+  actions.ensure_storage()
+  for player_index, action in pairs(storage.actions) do
+    local player = game.get_player(player_index)
+    if action.path_id == event.id and not action.done and player and player.character then
+      if event.path then
+        follow_path(player, action, event.path)
+      elseif event.try_again_later then
+        plan_path(player, action)
+      elseif action.margin > 0 then
+        action.margin = 0
+        plan_path(player, action)
+      else
+        finish(player, action, "no path")
+      end
+    end
+  end
 end
 
 local function tick_walk_to(player, action)
+  local path = action.path
+  if not path then
+    return
+  end
   local position = player.position
   -- One tick of movement must not jump across the arrival window.
   local tolerance = math.max(0.3, player.character_running_speed)
-  local direction = walk_direction(
-    action.target.x - position.x,
-    action.target.y - position.y,
-    tolerance
-  )
-  if not direction then
+  while action.next < #path
+    and (progress_along(path[action.next - 1], path[action.next], position) >= 1
+      or distance(position, path[action.next]) <= tolerance) do
+    action.next = action.next + 1
+  end
+  local goal = path[#path]
+  if action.next == #path
+    and math.abs(goal.x - position.x) <= tolerance
+    and math.abs(goal.y - position.y) <= tolerance then
     finish(player, action, "arrived")
     return
   end
-  local remaining = math.sqrt(common.distance_squared(position, action.target))
+  local remaining = distance(position, path[action.next]) + action.rest[action.next]
   if not action.checkpoint_tick then
     action.checkpoint_tick = game.tick
     action.checkpoint_remaining = remaining
   elseif game.tick - action.checkpoint_tick >= STUCK_TICKS then
     local expected = player.character_running_speed * (game.tick - action.checkpoint_tick)
     if action.checkpoint_remaining - remaining < expected * MIN_WALK_PROGRESS then
-      finish(player, action, "blocked")
+      if action.replans >= MAX_REPLANS then
+        finish(player, action, "blocked")
+      else
+        action.replans = action.replans + 1
+        halt(player)
+        plan_path(player, action)
+      end
       return
     end
     action.checkpoint_tick = game.tick
     action.checkpoint_remaining = remaining
   end
-  player.walking_state = {walking = true, direction = direction}
+  local aim = steering_point(path[action.next - 1], path[action.next], position)
+  player.walking_state = {walking = true, direction = heading(aim.x - position.x, aim.y - position.y)}
 end
 
 local function tick_mine(player, action)
@@ -193,12 +293,26 @@ end
 function handlers.walk_to(params)
   local player = common.get_player(params)
   local target = common.position_from(player, params)
+  if player.vehicle then
+    common.fail("the player is in a " .. player.vehicle.name .. ", which the API cannot drive or leave")
+  end
+  local goal = player.surface.find_non_colliding_position(
+    player.character.name, target, FREE_TILE_RADIUS, 0.5, true
+  )
+  if not goal then
+    common.fail("no free tile within " .. FREE_TILE_RADIUS .. " tiles of the target")
+  end
   stop_player(player)
-  storage.actions[player.index] = {
+  local action = {
     kind = "walk_to",
     target = target,
+    goal = goal,
+    margin = PATH_MARGIN,
+    replans = 0,
     until_tick = game.tick + MAX_ACTION_TICKS,
   }
+  storage.actions[player.index] = action
+  plan_path(player, action)
   return actions.current_summary(player)
 end
 

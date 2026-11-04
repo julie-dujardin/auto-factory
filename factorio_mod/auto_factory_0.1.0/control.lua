@@ -38,6 +38,10 @@ script.on_event(defines.events.on_surface_created, function(event)
 end)
 script.on_event(defines.events.on_tick, actions.on_tick)
 script.on_event(defines.events.on_player_mined_item, actions.on_player_mined_item)
+script.on_event(
+  defines.events.on_script_path_request_finished,
+  actions.on_script_path_request_finished
+)
 
 local function respond(response)
   rcon.print(RESPONSE_PREFIX .. helpers.table_to_json(response))

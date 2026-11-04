@@ -315,8 +315,10 @@ API_TOOLS = [
     ),
     _tool(
         "api_walk_to",
-        "Walk to a position using normal character movement and collision. Returns "
-        "whether the player arrived or got blocked, the position of the tile it "
+        "Walk to a position along a path around obstacles, using normal character "
+        "movement and collision. A target tile the character cannot stand on, e.g. "
+        "inside a machine, is replaced by the nearest free tile. Returns whether the "
+        "player arrived, got blocked, or found no path, the position of the tile it "
         "stands on, and the target.",
         _object_schema(
             {
