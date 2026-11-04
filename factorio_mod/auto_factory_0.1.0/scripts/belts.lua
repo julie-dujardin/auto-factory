@@ -123,9 +123,25 @@ function belts.runs(transport_belts, centre, origin, scanned)
     return nil
   end
 
+  -- The offset of an end belt, with the coordinate along the run replaced when the
+  -- run carries on outside the scan toward sign.
+  local function end_offset(belt, sign)
+    local step = common.DIRECTION_STEPS[belt.direction]
+    local offset = common.offset_from(origin, belt.position)
+    local next_belt = belt.surface.find_entity(belt.name, {
+      x = belt.position.x + sign * step.x,
+      y = belt.position.y + sign * step.y,
+    })
+    if next_belt and next_belt.direction == belt.direction
+      and not scanned[next_belt.unit_number] then
+      offset[step.x ~= 0 and "dx" or "dy"] = "beyond scan"
+    end
+    return offset
+  end
+
   local function start(head)
     local run = {
-      head = head, length = 0, items = {}, distance = math.huge, sides = {}, beyond = {},
+      head = head, tail = head, items = {}, distance = math.huge, sides = {}, beyond = {},
     }
     for side = 1, 2 do
       run.sides[side] = {counts = {}, moving = 0, length = 0}
@@ -144,7 +160,7 @@ function belts.runs(transport_belts, centre, origin, scanned)
   end
 
   local function extend(run, belt)
-    run.length = run.length + 1
+    run.tail = belt
     run.distance = math.min(run.distance, common.distance_squared(centre, belt.position))
     for side = 1, 2 do
       local into, from = run.sides[side], measured[belt.unit_number][side]
@@ -155,10 +171,13 @@ function belts.runs(transport_belts, centre, origin, scanned)
       into.length = into.length + from.length
       run.items[side] = run.items[side] or most_common(from.counts)
     end
+    -- A same-named neighbour facing the same way is the run carrying on, which
+    -- end_offset reports.
     local neighbours = belt.belt_neighbours
     for key, others in pairs({upstream = neighbours.inputs, downstream = neighbours.outputs}) do
       for _, other in pairs(others) do
-        if not scanned[other.unit_number] then
+        if not scanned[other.unit_number]
+          and not (other.name == belt.name and other.direction == belt.direction) then
           run.beyond[key] = true
         end
       end
@@ -180,9 +199,9 @@ function belts.runs(transport_belts, centre, origin, scanned)
       entry = {
         name = head.name,
         type = head.type,
-        position = common.offset_from(origin, head.position),
+        from = end_offset(head, -1),
+        to = end_offset(run.tail, 1),
         direction = common.DIRECTION_NAMES[head.direction],
-        length = run.length,
         lanes = lanes(run.sides, head.prototype.belt_speed * 60),
         beyond_scan = #beyond > 0 and beyond or nil,
       },
