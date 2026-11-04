@@ -212,6 +212,27 @@ def test_cut_off_thinking_is_saved_to_notes_then_dropped() -> None:
     assert "Notes:\nbelt at dy=5" in contents[-1]
 
 
+def test_cut_off_note_round_keeps_its_first_finished_call() -> None:
+    completions = FakeCompletions(
+        [
+            "the belt goes at dy=5",
+            CutOff(
+                [
+                    FakeCall("notes", '{"text":"belt at dy=5, chest at dx=9"}'),
+                    FakeCall("notes", '{"text":"belt at dy=5"}', "call-2"),
+                    FakeCall("notes", '{"text":"be', "call-3"),
+                ]
+            ),
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+
+    computer_agent(completions, FakeComputer()).run("move")
+
+    tasks = completions.requests[2]["messages"][-1]["content"]
+    assert "Notes:\nbelt at dy=5, chest at dx=9" in tasks
+
+
 def test_cut_off_note_round_falls_back_to_the_warning() -> None:
     completions = FakeCompletions(
         [

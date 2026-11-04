@@ -510,13 +510,17 @@ class FactorioAgent:
             tool_calls, cut_off, _ = self._complete(
                 f"step {step} notes", messages, tools, "required", REASONING_EFFORTS[0]
             )
-            for call in [] if cut_off else tool_calls:
-                try:
-                    arguments = json.loads(call.function.arguments)
-                    result = tasks.handle("notes", arguments)
-                except (json.JSONDecodeError, KeyError, TypeError) as exc:
-                    self._report(f"step {step}: notes from cut-off thinking: {exc}")
-                    continue
+            # Later calls of the turn repeat ever shorter fragments of the first, and
+            # the output limit leaves the last one unfinished.
+            finished = tool_calls[:-1] if cut_off else tool_calls
+            try:
+                arguments = json.loads(finished[0].function.arguments)
+                result = tasks.handle("notes", arguments)
+            except IndexError:
+                pass
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                self._report(f"step {step}: notes from cut-off thinking: {exc}")
+            else:
                 with get_client().start_as_current_observation(
                     as_type="tool", name="notes", input=arguments
                 ) as span:
