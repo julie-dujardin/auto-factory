@@ -59,6 +59,57 @@ local function placed_entity(item)
 end
 
 local OBSTRUCTIONS_LISTED = 5
+local FIT_RADIUS = 10
+local FITS_LISTED = 3
+
+-- The nearest spots and directions where the engine would build entity, as text.
+local function fitting_spots(player, entity, position, asked)
+  local surface, force = player.surface, player.force
+  local fits = {}
+  for direction in pairs(common.DIRECTION_STEPS) do
+    local width, height = layout.footprint(entity, direction)
+    for ox = -FIT_RADIUS, FIT_RADIUS do
+      for oy = -FIT_RADIUS, FIT_RADIUS do
+        local spot = {x = layout.snap(position.x + ox, width), y = layout.snap(position.y + oy, height)}
+        local distance = common.distance_squared(position, spot)
+        if distance <= FIT_RADIUS ^ 2 and surface.can_place_entity {
+          name = entity.name,
+          position = spot,
+          direction = direction,
+          force = force,
+          build_check_type = defines.build_check_type.manual,
+        } then
+          table.insert(fits, {
+            spot = spot,
+            direction = direction,
+            width = width,
+            height = height,
+            rank = {distance, direction == asked and 0 or 1, direction},
+          })
+        end
+      end
+    end
+  end
+  if #fits == 0 then
+    return "the tiles there do not suit it, nor anywhere within " .. FIT_RADIUS .. " tiles"
+  end
+  table.sort(fits, function(a, b)
+    for index = 1, 3 do
+      if a.rank[index] ~= b.rank[index] then
+        return a.rank[index] < b.rank[index]
+      end
+    end
+    return false
+  end)
+  local origin = common.origin(player)
+  local listed = {}
+  for index = 1, math.min(FITS_LISTED, #fits) do
+    local fit = fits[index]
+    table.insert(listed, common.footprint_text(origin, fit.spot, fit.width, fit.height)
+      .. " direction " .. common.DIRECTION_NAMES[fit.direction])
+  end
+  return "the tiles there do not suit it; nearest spots that fit: " .. table.concat(listed, ", ")
+end
 
 -- Names what keeps entity from being built at position, or nil when it is unclear.
 local function obstruction(player, entity, position, direction)
@@ -113,6 +164,10 @@ local function obstruction(player, entity, position, direction)
   end
   if character_there then
     return "the player stands there"
+  end
+  -- Such as an offshore pump's land underneath and water ahead.
+  if entity.tile_buildability_rules then
+    return fitting_spots(player, entity, position, direction)
   end
   return nil
 end
