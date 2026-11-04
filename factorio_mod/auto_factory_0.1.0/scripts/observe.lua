@@ -18,7 +18,7 @@ local function listed(entity)
   return result
 end
 
--- Entries after folding transport belts into runs, nearest first.
+-- Entries after folding belts into lines, nearest first.
 local NEARBY_LISTED = 100
 
 function handlers.observe(params)
@@ -56,35 +56,26 @@ function handlers.observe(params)
     invert = true,
   }
   local origin = common.origin(player)
-  local transport_belts = {}
-  local candidates = {}
-  local scanned = {}
+  local candidates, splitter_outputs = belts.lines(nearby, player.position, origin, entities.id)
   for _, entity in pairs(nearby) do
-    if entity.unit_number then
-      scanned[entity.unit_number] = true
-    end
-    if entity.type == "transport-belt" then
-      table.insert(transport_belts, entity)
-    elseif listed(entity) then
+    if not belts.LINE_TYPES[entity.type] and listed(entity) then
       table.insert(candidates, {
         entity = entity,
         distance = common.distance_squared(player.position, entity.position),
       })
     end
   end
-  for _, run in pairs(belts.runs(transport_belts, player.position, origin, scanned)) do
-    run.entry.id = entities.id(run.head)
-    table.insert(candidates, run)
-  end
   table.sort(candidates, function(a, b) return a.distance < b.distance end)
   local nearby_entries = {}
   local networks = {}
   for index = 1, math.min(NEARBY_LISTED, #candidates) do
     local candidate = candidates[index]
-    table.insert(
-      nearby_entries,
-      candidate.entry or entities.entry(candidate.entity, origin, networks)
-    )
+    local entry = candidate.entry
+    if not entry then
+      entry = entities.entry(candidate.entity, origin, networks)
+      entry.into = splitter_outputs[candidate.entity.unit_number]
+    end
+    table.insert(nearby_entries, entry)
   end
 
   return {

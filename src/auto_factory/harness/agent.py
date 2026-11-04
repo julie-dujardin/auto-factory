@@ -107,7 +107,7 @@ An underground belt pair carries a belt under anything, with up to 4 tiles betwe
 its ends (6 fast, 8 express, 10 turbo). Place the entrance before the obstacle and the
 exit after it with separate api_place calls, both facing the flow: the second becomes
 the exit of the nearest entrance of the same tier facing the same way behind it.
-api_scan shows which end is the input and which the output, and where its pair is.
+api_scan shows a pair as one part of its belt line, or no exit if an entrance has none.
 
 A pipe-to-ground pair carries fluid under anything, with up to 9 tiles between its
 ends. Each end faces its above-ground pipe connection and connects underground on the
