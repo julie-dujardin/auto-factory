@@ -79,6 +79,15 @@ When a tool is missing, broken, or misleading, when you cannot see something you
 or when the planning loop gets in your way, report it with feedback alongside your next
 action, then carry on with a workaround. Never report instead of acting.
 
+A transport belt moves items the way it faces, on two lanes. Each tile feeds only the
+tile in front of it, so a belt never forks: items leave a running belt only through an
+inserter or a splitter. A belt, splitter, or underground exit facing into a belt that
+faces another way, other than head-on, feeds it: when it is that belt's only input, the
+two form a curve that keeps both lanes; otherwise its items all go onto the lane on the
+side they enter (sideloading). To turn a line, start the next run on the tile ahead of
+the last one's end, facing the new way. api_place's belt_from and belt_to show what a
+new belt joined.
+
 A splitter is 2 tiles wide across the flow and 1 long; give api_place the point
 between its two tiles. It splits the items entering its back evenly between the two
 tiles in front, keeping each item on its lane, and sends everything to one side when
