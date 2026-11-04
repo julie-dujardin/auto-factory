@@ -52,7 +52,7 @@ function common.get_player(params)
   return player
 end
 
-local function tile_centre(position)
+function common.tile_centre(position)
   return {x = math.floor(position.x) + 0.5, y = math.floor(position.y) + 0.5}
 end
 
@@ -61,7 +61,7 @@ end
 -- as the player moves and 1x1 or odd-sized entities sit at whole offsets.
 function common.set_origin(player)
   storage.origins = storage.origins or {}
-  storage.origins[player.index] = tile_centre(player.position)
+  storage.origins[player.index] = common.tile_centre(player.position)
   return storage.origins[player.index]
 end
 
@@ -71,7 +71,7 @@ end
 
 -- The tile the player stands on.
 function common.player_position(player)
-  return common.offset_from(common.origin(player), tile_centre(player.position))
+  return common.offset_from(common.origin(player), common.tile_centre(player.position))
 end
 
 function common.position_from(player, params)

@@ -284,14 +284,18 @@ local function holder_at(reacher, side)
   return nil
 end
 
--- The holder reacher reaches on side with what it carries there: a belt's lanes on that
--- tile, a crafting machine's recipe, or else the items it holds.
-local function endpoint(reacher, side)
+-- The tile reacher reaches on side, and the holder there with what it carries: a belt's
+-- lanes on that tile, a crafting machine's recipe, or else the items it holds. With no
+-- holder, name is empty.
+local function endpoint(reacher, side, origin, empty)
+  local result = {tile = common.offset_from(origin, common.tile_centre(reacher[side .. "_position"]))}
   local holder = holder_at(reacher, side)
   if not holder then
-    return nil
+    result.name = empty
+    return result
   end
-  local result = {id = entities.id(holder), name = holder.name}
+  result.id = entities.id(holder)
+  result.name = holder.name
   local crafts, recipe = pcall(holder.get_recipe)
   if holder.prototype.belt_speed then
     result.lanes = belts.lanes(holder)
@@ -424,10 +428,10 @@ function entities.entry(entity, origin, networks)
     end
     local override = entity.inserter_stack_size_override
     entry.stack_size_override = override > 0 and override or nil
-    entry.takes_from = endpoint(entity, "pickup") or "nothing"
+    entry.takes_from = endpoint(entity, "pickup", origin, "nothing")
   end
   if entity.type == "inserter" or entity.type == "mining-drill" then
-    entry.gives_to = endpoint(entity, "drop") or "ground"
+    entry.gives_to = endpoint(entity, "drop", origin, "ground")
   end
   if entity.type == "splitter" then
     entry.input_priority = entity.splitter_input_priority
@@ -511,13 +515,13 @@ function entities.links(entity, origin)
   local warnings = {}
   if entity.type == "inserter" or entity.type == "mining-drill" then
     if entity.type == "inserter" then
-      links.takes_from = endpoint(entity, "pickup")
-      if not links.takes_from then
+      links.takes_from = endpoint(entity, "pickup", origin, "nothing")
+      if links.takes_from.name == "nothing" then
         table.insert(warnings, "takes from nothing")
       end
     end
-    links.gives_to = endpoint(entity, "drop")
-    if not links.gives_to then
+    links.gives_to = endpoint(entity, "drop", origin, "ground")
+    if links.gives_to.name == "ground" then
       table.insert(warnings, "drops onto the ground")
     end
   elseif entity.type == "electric-pole" then

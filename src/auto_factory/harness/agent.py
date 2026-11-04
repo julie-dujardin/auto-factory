@@ -88,6 +88,13 @@ side they enter (sideloading). To turn a line, start the next run on the tile ah
 the last one's end, facing the new way. api_place's belt_from and belt_to show what a
 new belt joined.
 
+An inserter moves items in a straight line across its own tile: it takes from the tile
+on one side and drops onto the tile on the opposite side, 1 tile away (2 for
+long-handed). Its direction is the side it takes from: one at dy=0 facing north takes
+from dy=-1 and drops into dy=1. So an inserter that is not long-handed needs exactly one
+free tile between the two things it links, and stands there. takes_from and gives_to
+give the tile it reaches on each side.
+
 A splitter is 2 tiles wide across the flow and 1 long; give api_place the point
 between its two tiles. It splits the items entering its back evenly between the two
 tiles in front, keeping each item on its lane, and sends everything to one side when
