@@ -280,7 +280,7 @@ end
 
 -- Spots where an inserter or pole of item connects the entities params name, and how
 -- many of them to build.
-local function connect_spots(item, entity, params)
+local function connect_spots(player, item, entity, params)
   local pickup_from = math.floor(tonumber(params.pickup_from) or 0)
   local drop_into = math.floor(tonumber(params.drop_into) or 0)
   local power = type(params.power) == "table" and params.power or {}
@@ -291,7 +291,9 @@ local function connect_spots(item, entity, params)
     if pickup_from == 0 or drop_into == 0 then
       common.fail("an inserter needs both pickup_from and drop_into")
     end
-    local spots = layout.inserter_spots(entity, entities.by_id(pickup_from), entities.by_id(drop_into))
+    local spots = layout.inserter_spots(
+      entity, entities.by_id(pickup_from), entities.by_id(drop_into), common.origin(player)
+    )
     return spots, line_count(params)
   end
   if #power == 0 then
@@ -311,7 +313,7 @@ function handlers.connect(params)
   local player = common.get_player(params)
   local item = common.required_string(params, "item")
   local entity = placed_entity(item)
-  local spots, count = connect_spots(item, entity, params)
+  local spots, count = connect_spots(player, item, entity, params)
   local cursor = empty_cursor(player)
   local stood = common.player_position(player)
   local built, first_reason = {}, nil

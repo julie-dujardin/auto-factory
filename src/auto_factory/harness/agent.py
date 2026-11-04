@@ -131,6 +131,27 @@ CUT_OFF_WARNING = {
     "a tool, and its thinking is lost. Think less per turn: record what you have "
     "decided with notes, then work out one part at a time.",
 }
+CUT_OFF_NOTED = {
+    "role": "user",
+    "content": "Your last turn hit the output limit while thinking, before it called "
+    "a tool; what it worked out is now in your notes. Think less per turn: work out "
+    "one part at a time.",
+}
+
+
+def cut_off_thinking(reasoning: str) -> dict[str, str]:
+    return {
+        "role": "user",
+        "content": "Your last turn hit the output limit while thinking, before it "
+        "called a tool. This is its thinking, which you will not see again:\n"
+        f"<thinking>\n{reasoning}\n</thinking>\n"
+        "Save with notes what it settled that you still need: the plan, layout, or "
+        "fix, with the ids and positions involved, keeping what still holds from "
+        "your current notes. Where it changed its mind, keep only its last "
+        "conclusion.",
+    }
+
+
 CUT_OFF_CALL = (
     "error: the output limit cut this call off while you wrote its arguments, so it "
     "did not run; send it again with shorter arguments"
@@ -341,7 +362,7 @@ class FactorioAgent:
             trim_images(messages)
             trim_game_states(messages)
             trim_tasks(messages)
-            tool_calls, cut_off = self._complete(
+            tool_calls, cut_off, reasoning = self._complete(
                 f"step {step}", messages, self._tools, "required", effort
             )
             if cut_off and not tool_calls:
@@ -350,7 +371,7 @@ class FactorioAgent:
                     f"step {step}: output limit hit before a tool call; "
                     f"retrying at {effort} reasoning effort"
                 )
-                messages.append(CUT_OFF_WARNING)
+                self._save_cut_off_thinking(messages, tasks, step, reasoning)
                 continue
             if not tool_calls:
                 self._report(f"step {step}: model returned no tool call")
@@ -424,9 +445,9 @@ class FactorioAgent:
         tools: list[dict[str, Any]],
         tool_choice: str,
         reasoning_effort: ReasoningEffort,
-    ) -> tuple[list[Any], bool]:
-        """Request one turn, append it to messages, and say if the output limit cut
-        it off."""
+    ) -> tuple[list[Any], bool, str | None]:
+        """Request one turn, append it to messages, and give its tool calls, whether
+        the output limit cut it off, and its reasoning."""
         parameters: dict[str, str | float] = {
             "tool_choice": tool_choice,
             "temperature": 0.8,
@@ -468,7 +489,41 @@ class FactorioAgent:
                     else "output limit before a tool call",
                 )
         messages.append(reply)
-        return tool_calls, cut_off
+        return tool_calls, cut_off, getattr(message, "reasoning", None)
+
+    def _save_cut_off_thinking(
+        self,
+        messages: list[dict[str, Any]],
+        tasks: TaskTree,
+        step: int,
+        reasoning: str | None,
+    ) -> None:
+        """Have the model save to notes what a turn cut off while thinking worked
+        out, then drop that thinking from the context."""
+        start = len(messages)
+        saved = False
+        if reasoning:
+            messages.append(cut_off_thinking(reasoning))
+            tools = [
+                tool for tool in self._tools if tool["function"]["name"] == "notes"
+            ]
+            tool_calls, cut_off, _ = self._complete(
+                f"step {step} notes", messages, tools, "required", REASONING_EFFORTS[0]
+            )
+            for call in [] if cut_off else tool_calls:
+                try:
+                    arguments = json.loads(call.function.arguments)
+                    result = tasks.handle("notes", arguments)
+                except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                    self._report(f"step {step}: notes from cut-off thinking: {exc}")
+                    continue
+                with get_client().start_as_current_observation(
+                    as_type="tool", name="notes", input=arguments
+                ) as span:
+                    span.update(output=result)
+                saved = True
+        del messages[start:]
+        messages.append(CUT_OFF_NOTED if saved else CUT_OFF_WARNING)
 
     def _feedback(
         self,
@@ -497,7 +552,7 @@ class FactorioAgent:
         trim_tasks(messages)
         messages.append(look_back_prompt(outcome, reports))
         tools = [tool for tool in self._tools if tool["function"]["name"] == "feedback"]
-        tool_calls, _ = self._complete(
+        tool_calls, _, _ = self._complete(
             "look back", messages, tools, "auto", self._reasoning_effort
         )
         for call in tool_calls:

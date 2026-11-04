@@ -8,6 +8,7 @@ import pytest
 from auto_factory.control.computer import Screenshot
 from auto_factory.harness.agent import (
     CUT_OFF_CALL,
+    CUT_OFF_NOTED,
     CUT_OFF_WARNING,
     FactorioAgent,
     fell_short,
@@ -45,7 +46,7 @@ class CutOff(list[FakeCall]):
 
 
 class FakeCompletions:
-    def __init__(self, calls: list[FakeCall | list[FakeCall]]) -> None:
+    def __init__(self, calls: list[FakeCall | list[FakeCall] | str]) -> None:
         self.calls = calls
         self.requests: list[dict[str, Any]] = []
 
@@ -59,9 +60,16 @@ class FakeCompletions:
                 choices=[SimpleNamespace(message=message, finish_reason="stop")]
             )
         calls = self.calls.pop(0)
-        tool_calls = calls if isinstance(calls, list) else [calls]
-        message = SimpleNamespace(content=None, tool_calls=tool_calls)
-        # An empty list stands for a turn cut off while thinking.
+        # A string stands for a turn cut off while thinking it, an empty list for one
+        # cut off with no reasoning returned.
+        reasoning = calls if isinstance(calls, str) else None
+        if reasoning is not None:
+            tool_calls = []
+        else:
+            tool_calls = calls if isinstance(calls, list) else [calls]
+        message = SimpleNamespace(
+            content=None, tool_calls=tool_calls, reasoning=reasoning
+        )
         cut_off = not tool_calls or isinstance(calls, CutOff)
         finish_reason = "length" if cut_off else "tool_calls"
         return SimpleNamespace(
@@ -181,6 +189,44 @@ def test_cut_off_turn_warns_to_think_less() -> None:
     messages = completions.requests[1]["messages"]
     warnings = [m for m in messages if m["content"] == CUT_OFF_WARNING["content"]]
     assert len(warnings) == 1
+
+
+def test_cut_off_thinking_is_saved_to_notes_then_dropped() -> None:
+    completions = FakeCompletions(
+        [
+            "the belt goes at dy=5",
+            FakeCall("notes", '{"text":"belt at dy=5"}'),
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+
+    computer_agent(completions, FakeComputer()).run("move")
+
+    noting = completions.requests[1]
+    assert [tool["function"]["name"] for tool in noting["tools"]] == ["notes"]
+    assert noting["reasoning_effort"] == "low"
+    assert "the belt goes at dy=5" in noting["messages"][-1]["content"]
+    contents = [str(m["content"]) for m in completions.requests[2]["messages"]]
+    assert not any("the belt goes at dy=5" in content for content in contents)
+    assert CUT_OFF_NOTED["content"] in contents
+    assert "Notes:\nbelt at dy=5" in contents[-1]
+
+
+def test_cut_off_note_round_falls_back_to_the_warning() -> None:
+    completions = FakeCompletions(
+        [
+            "the belt goes at dy=5",
+            "still thinking",
+            FakeCall("complete_task", '{"result":"done"}'),
+        ]
+    )
+
+    computer_agent(completions, FakeComputer()).run("move")
+
+    contents = [str(m["content"]) for m in completions.requests[2]["messages"]]
+    assert not any("the belt goes at dy=5" in content for content in contents)
+    assert CUT_OFF_WARNING["content"] in contents
+    assert "Notes: none yet" in contents[-1]
 
 
 def test_cut_off_turn_retries_one_effort_lower_until_one_acts() -> None:

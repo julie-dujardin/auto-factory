@@ -190,9 +190,55 @@ local function gap(a, b)
     math.max(0, a.left_top.y - b.right_bottom.y, b.left_top.y - a.right_bottom.y)
 end
 
+-- The centre of area's tile nearest other; where they overlap along an axis, the
+-- middle of the overlap, so both areas pick tiles in line.
+local function nearest_tile(area, other)
+  local function axis(low, high, other_low, other_high)
+    local from, to = math.max(low, other_low), math.min(high, other_high)
+    local target = from < to and (from + to) / 2 or (other_low + other_high) / 2
+    return math.floor(clamp(target, low + 0.5, high - 0.5)) + 0.5
+  end
+  return {
+    x = axis(area.left_top.x, area.right_bottom.x, other.left_top.x, other.right_bottom.x),
+    y = axis(area.left_top.y, area.right_bottom.y, other.left_top.y, other.right_bottom.y),
+  }
+end
+
+-- Why no inserter spot links from and into: where they come closest, nearest middle
+-- among equally close tiles, and how far apart.
+local function unreachable(prototype, source, target, from, into, origin, middle)
+  local best
+  for _, a in pairs(from) do
+    for _, b in pairs(into) do
+      local tile_a, tile_b = nearest_tile(a, b), nearest_tile(b, a)
+      local distance = common.distance_squared(tile_a, tile_b)
+      local off_middle = common.distance_squared(tile_a, middle)
+      if not best or distance < best.distance
+        or distance == best.distance and off_middle < best.off_middle then
+        best = {
+          distance = distance, off_middle = off_middle, a = a, b = b,
+          tile_a = tile_a, tile_b = tile_b,
+        }
+      end
+    end
+  end
+  local north = info.ports(prototype, defines.direction.north)
+  local apart_x, apart_y = gap(best.a, best.b)
+  local closest = common.offset_text(origin, best.tile_a) .. " and "
+    .. common.offset_text(origin, best.tile_b)
+  local where = apart_x == 0 and apart_y == 0
+      and "they touch at " .. closest .. ", leaving no tile between them for it"
+    or "they come closest at " .. closest .. ", " .. apart_x
+      .. " tiles apart east-west and " .. apart_y .. " north-south"
+  return "no spot lets a " .. prototype.name .. " take from " .. entities.label(source)
+    .. " and drop into " .. entities.label(target) .. ": it picks up "
+    .. math.abs(north.pickup.dy) .. " tile(s) and drops " .. math.abs(north.drop.dy)
+    .. " tile(s) away in a straight line, and " .. where
+end
+
 -- Spots, nearest the middle of source and target first, where an inserter of prototype
--- takes from source and drops into target.
-function layout.inserter_spots(prototype, source, target)
+-- takes from source and drops into target; origin is the run's start tile.
+function layout.inserter_spots(prototype, source, target, origin)
   local from, into = reachable_areas(source), reachable_areas(target)
   local middle = {
     x = (source.position.x + target.position.x) / 2,
@@ -218,15 +264,7 @@ function layout.inserter_spots(prototype, source, target)
     end
   end
   if #spots == 0 then
-    local north = info.ports(prototype, defines.direction.north)
-    local apart_x, apart_y = gap(entity_area(source), entity_area(target))
-    common.fail(
-      "no spot lets a " .. prototype.name .. " take from " .. entities.label(source)
-        .. " and drop into " .. entities.label(target) .. ": it picks up "
-        .. math.abs(north.pickup.dy) .. " tile(s) and drops " .. math.abs(north.drop.dy)
-        .. " tile(s) away in a straight line, and they are " .. apart_x
-        .. " tiles apart east-west and " .. apart_y .. " north-south"
-    )
+    common.fail(unreachable(prototype, source, target, from, into, origin, middle))
   end
   table.sort(spots, function(a, b) return a.distance < b.distance end)
   return spots
