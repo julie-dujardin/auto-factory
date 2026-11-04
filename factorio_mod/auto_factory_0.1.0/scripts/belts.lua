@@ -104,9 +104,9 @@ end
 
 -- Transport belts as one entry per straight run: consecutive tiles with the same name
 -- and direction, split where a lane's item changes. Each entry comes with its upstream
--- belt as head and the squared distance from origin to the run's nearest belt.
+-- belt as head and the squared distance from centre to the run's nearest belt.
 -- scanned holds the unit numbers of every entity in the scan, belts or not.
-function belts.runs(transport_belts, origin, scanned)
+function belts.runs(transport_belts, centre, origin, scanned)
   local at = {}
   local measured = {}
   for _, belt in pairs(transport_belts) do
@@ -145,7 +145,7 @@ function belts.runs(transport_belts, origin, scanned)
 
   local function extend(run, belt)
     run.length = run.length + 1
-    run.distance = math.min(run.distance, common.distance_squared(origin, belt.position))
+    run.distance = math.min(run.distance, common.distance_squared(centre, belt.position))
     for side = 1, 2 do
       local into, from = run.sides[side], measured[belt.unit_number][side]
       for name, count in pairs(from.counts) do

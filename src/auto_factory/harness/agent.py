@@ -22,12 +22,11 @@ SYSTEM_PROMPT = """You are controlling Factorio through observations and tools.
 Work toward the user's goal in deliberate steps. Inspect the newest observations
 before acting. Screenshot coordinates are normalized to [0, 1000] with the origin at
 top-left. Game positions in API arguments and results are dx/dy offsets in tiles from
-the centre of the tile the player stands on (positive dx is east, positive dy is
-south), so they change whenever the player moves to another tile. A 1x1 entity and the
-centre of an odd-sized one sit at whole offsets: a 3x3 machine at dx=1 dy=1 covers dx
-0 to 2 and dy 0 to 2. Only player.world_position in api_scan is absolute: it is the
-centre of that tile. Record locations in notes as world positions and subtract it to
-get offsets again.
+the centre of the tile the player stood on when the run started (positive dx is east,
+positive dy is south). They stay fixed as the player moves, so a position from any
+earlier result or note can be passed straight back; player.position in api_scan is
+where the player stands now. A 1x1 entity and the centre of an odd-sized one sit at
+whole offsets: a 3x3 machine at dx=1 dy=1 covers dx 0 to 2 and dy 0 to 2.
 Entity ids from api_scan, api_find, api_place, and api_connect never change, so prefer
 them for entities you act on or build next to.
 Use game_action for known controls instead of reasoning about keyboard letters.
@@ -58,7 +57,7 @@ for an unknown ID lists similar IDs: pick from them or search, never retry a var
 
 Your thinking is not shown to you again, so keep your plan in notes: whenever thinking
 settles a plan, a layout, or a fix, write it with notes in the same turn as your first
-action on it, and record what you built where, with ids and world positions.
+action on it, and record what you built where, with ids and positions.
 For a goal with several stages, split it into ordered tasks with add_tasks; a simple
 goal needs none. propose_approaches gives the current task fallbacks that fail_task
 moves to in order. Call complete_task when its done_when holds, recording the
@@ -294,6 +293,8 @@ class FactorioAgent:
         ]
         tasks = TaskTree(task)
         reports: list[str] = []
+        if self._factorio is not None:
+            self._factorio.call("set_origin", {})
         outcome = self._play(messages, tasks, reports)
         self._look_back(messages, tasks, reports, outcome)
         return outcome

@@ -120,10 +120,10 @@ CAMERA = {
 class FakeFactorio:
     def __init__(self, results: dict[str, Any] | None = None) -> None:
         self.actions: list[tuple[str, dict[str, object]]] = []
-        self.results = {"camera": CAMERA} | (results or {})
+        self.results = {"camera": CAMERA, "set_origin": {}} | (results or {})
 
     def observe(self, radius: float) -> dict[str, object]:
-        return {"radius": radius, "player": {"world_position": {"x": 1, "y": 2}}}
+        return {"radius": radius, "player": {"position": {"dx": 1, "dy": 2}}}
 
     def execute(self, name: str, arguments: dict[str, object]) -> str:
         self.actions.append((name, arguments))
@@ -256,6 +256,7 @@ def test_game_tools_need_no_approach() -> None:
 
     assert agent.run("craft") == "Failed: gave up"
     assert factorio.actions == [
+        ("set_origin", {}),
         ("api_scan", {"radius": 8}),
         ("api_find", json.loads(FIND)),
         ("api_search", {"query": "gear", "kind": "item"}),
@@ -523,7 +524,8 @@ def test_api_agent_uses_state_without_screenshot() -> None:
 
     assert agent.run("craft") == "crafted"
     assert factorio.actions == [
-        ("api_craft", {"recipe": "iron-gear-wheel", "count": 1})
+        ("set_origin", {}),
+        ("api_craft", {"recipe": "iron-gear-wheel", "count": 1}),
     ]
     tools = completions.requests[0]["tools"]
     assert {tool["function"]["name"] for tool in tools} >= {"api_craft", "add_tasks"}
@@ -602,6 +604,7 @@ def test_mixed_agent_drags_between_tile_centres() -> None:
         ("wait", (0.25,)),
     ]
     assert [action for action in factorio.actions if action[0] != "camera"] == [
+        ("set_origin", {}),
         ("drag_prepare", arguments),
         ("drag_finish", {}),
     ]

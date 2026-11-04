@@ -34,10 +34,8 @@ def _tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, 
 
 OFFSET = {
     "type": "number",
-    "minimum": -100,
-    "maximum": 100,
-    "description": "Tiles from the centre of the player's tile; positive dx is east, "
-    "positive dy is south.",
+    "description": "Tiles from the centre of the tile the player started the run "
+    "on; positive dx is east, positive dy is south.",
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
 LINE_COUNT = {"type": "integer", "minimum": 1, "maximum": 50}
@@ -161,7 +159,8 @@ API_TOOLS = [
         "Read structured player, inventory, resource, and entity state around the "
         "player, including the items and fluids each entity holds, listing the 100 "
         "nearest entities, cliffs included; omitted counts those beyond the cut. "
-        "The player gives build_distance: how far from it an entity's centre can be "
+        "The player gives position: the tile it stands on; build_distance: how far "
+        "from it an entity's centre can be "
         "built; reach_distance: how far an entity can be to insert into, take from, "
         "rotate, set the recipe of, or mine it; and resource_reach_distance: how far "
         "a resource tile can be to mine it. "
@@ -245,8 +244,8 @@ API_TOOLS = [
         "crude oil, and water named by the fluid offshore pumps draw from it. Tiles "
         "of one resource lying close together form a patch, as on the map; partial "
         "means it reaches uncharted land, so it may continue and its totals may be "
-        "lower bounds. Each patch gives distance and "
-        "nearest: the offset of its closest tile. Ores give amount, tiles, and area: "
+        "lower bounds. Each patch gives distance from the player and "
+        "nearest: the position of its closest tile. Ores give amount, tiles, and area: "
         "the left_top and right_bottom corners of the patch; infinite resources such "
         "as crude oil give yield_percent summed over their wells instead of amount. "
         "Water gives coastline: its count of shore tiles.",
@@ -264,9 +263,9 @@ API_TOOLS = [
     ),
     _tool(
         "api_walk_to",
-        "Walk by an offset in tiles using normal character movement and collision. "
-        "Returns whether the player arrived or got blocked, how far it moved, and the "
-        "offset still remaining to the target.",
+        "Walk to a position using normal character movement and collision. Returns "
+        "whether the player arrived or got blocked, the position of the tile it "
+        "stands on, and the target.",
         _object_schema(
             {
                 "dx": OFFSET,
@@ -277,7 +276,7 @@ API_TOOLS = [
     ),
     _tool(
         "api_mine",
-        "Mine the entity or resource at an offset from the player using normal reach "
+        "Mine the entity or resource at a position using normal reach "
         "and mining speed, until count items were gained or the target is gone.",
         _object_schema(
             {
@@ -398,10 +397,10 @@ API_TOOLS = [
         "side's north or west end; item_out covers a mining drill's output tile, "
         "pickup and drop an inserter's, ahead the tile past the downstream end of a "
         "transport belt's straight run, and behind the tile before its upstream end. "
-        "When the player stands in the way they step aside, and stepped_aside says "
-        "how far. Stops at the first tile that "
+        "When the player stands in the way they step aside, and stepped_aside gives "
+        "the tile they moved to. Stops at the first tile that "
         "is blocked, out of build reach, or out of items. Returns how many were "
-        "placed, the offsets of the first and last, snapped_from when snapping moved "
+        "placed, the positions of the first and last, snapped_from when snapping moved "
         "the first, and built: each entity's id, takes_from and gives_to as in "
         "api_scan, and what it is fed or emptied by, powers, or joins by pipe "
         "(fluid_to), with warnings for "
@@ -412,7 +411,7 @@ API_TOOLS = [
                 "anchor": ENTITY_ID
                 | {
                     "description": "Id of the entity to place relative to; 0 is the "
-                    "player, which only takes offset."
+                    "run's start tile, which only takes offset."
                 },
                 "at": {
                     "type": "string",
@@ -609,11 +608,11 @@ API_TOOLS = [
 MIXED_TOOLS = [
     _tool(
         "drag_build",
-        "Hold the mouse and drag a straight belt or pipe line like a player, from an "
-        "offset from the player for count tiles toward direction; belts face "
+        "Hold the mouse and drag a straight belt or pipe line like a player, from a "
+        "position for count tiles toward direction; belts face "
         "direction. The game bridges obstacles with underground belts or pipes from "
         "your inventory. Only the part within build reach is built. Returns the items "
-        "used and the offset where the drag ended.",
+        "used and the position where the drag ended.",
         _object_schema(
             {
                 "item": {"type": "string"},

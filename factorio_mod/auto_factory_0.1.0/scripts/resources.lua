@@ -152,13 +152,13 @@ local function center(cell)
   return {x = cell.x + 0.5, y = cell.y + 0.5}
 end
 
-local function summary(search, patch, origin)
+local function summary(search, patch, here, origin)
   local kind = search.kinds[patch.name]
   local nearest, nearest_distance
   local amount = 0
   local left, top, right, bottom = math.huge, math.huge, -math.huge, -math.huge
   for _, cell in pairs(patch.cells) do
-    local distance = common.distance_squared(origin, center(cell))
+    local distance = common.distance_squared(here, center(cell))
     if not nearest_distance or distance < nearest_distance then
       nearest, nearest_distance = cell, distance
     end
@@ -213,7 +213,7 @@ function resources.handlers.resources(params)
   local found = {}
   for _, cell in pairs(search.order) do
     if not cell.patch then
-      local entry, distance = summary(search, grow(search, cell), origin)
+      local entry, distance = summary(search, grow(search, cell), player.position, origin)
       table.insert(found, {entry = entry, distance = distance})
     end
   end

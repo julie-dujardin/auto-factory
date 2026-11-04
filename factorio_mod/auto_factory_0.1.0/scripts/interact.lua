@@ -201,6 +201,15 @@ local function built_links(player, built)
   return #result > 0 and result or nil
 end
 
+-- The player's tile once building moved it off stood, else nil.
+local function stepped_to(player, stood)
+  local now = common.player_position(player)
+  if now.dx ~= stood.dx or now.dy ~= stood.dy then
+    return now
+  end
+  return nil
+end
+
 -- Placements closer than this to the asked position are not reported as snapped.
 local SNAP_REPORTED = 0.25
 
@@ -214,7 +223,7 @@ function handlers.place(params)
   local entity = placed_entity(item)
   local width, height = layout.footprint(entity, direction)
   local start, requested = layout.start(player, params, width, height)
-  local stood = common.origin(player)
+  local stood = common.player_position(player)
   -- Copies sit edge to edge.
   local spacing = height
   if line == defines.direction.east or line == defines.direction.west then
@@ -244,12 +253,10 @@ function handlers.place(params)
     direction = params.direction,
     stopped = stopped,
     built = built_links(player, built),
+    stepped_aside = stepped_to(player, stood),
   }
   if requested and common.distance_squared(requested, start) >= SNAP_REPORTED ^ 2 then
     result.snapped_from = common.offset_from(origin, requested)
-  end
-  if common.distance_squared(stood, origin) > 0 then
-    result.stepped_aside = common.offset_from(stood, origin)
   end
   return result
 end
@@ -289,7 +296,7 @@ function handlers.connect(params)
   local entity = placed_entity(item)
   local spots, count = connect_spots(item, entity, params)
   local cursor = empty_cursor(player)
-  local stood = common.origin(player)
+  local stood = common.player_position(player)
   local built, first_reason = {}, nil
   for _, spot in ipairs(spots) do
     if #built == count then
@@ -305,13 +312,14 @@ function handlers.connect(params)
   if #built == 0 then
     common.fail("none of the " .. #spots .. " fitting spots worked; the best: " .. first_reason)
   end
-  local result = {placed = item, count = #built, built = built_links(player, built)}
+  local result = {
+    placed = item,
+    count = #built,
+    built = built_links(player, built),
+    stepped_aside = stepped_to(player, stood),
+  }
   if #built < count then
     result.stopped = "only " .. #built .. " of the " .. #spots .. " fitting spots worked; the best failed: " .. first_reason
-  end
-  local origin = common.origin(player)
-  if common.distance_squared(stood, origin) > 0 then
-    result.stepped_aside = common.offset_from(stood, origin)
   end
   return result
 end

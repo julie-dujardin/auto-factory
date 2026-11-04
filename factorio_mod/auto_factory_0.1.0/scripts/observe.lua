@@ -68,11 +68,11 @@ function handlers.observe(params)
     elseif listed(entity) then
       table.insert(candidates, {
         entity = entity,
-        distance = common.distance_squared(origin, entity.position),
+        distance = common.distance_squared(player.position, entity.position),
       })
     end
   end
-  for _, run in pairs(belts.runs(transport_belts, origin, scanned)) do
+  for _, run in pairs(belts.runs(transport_belts, player.position, origin, scanned)) do
     run.entry.id = entities.id(run.head)
     table.insert(candidates, run)
   end
@@ -93,7 +93,7 @@ function handlers.observe(params)
     player = {
       index = player.index,
       name = player.name,
-      world_position = common.origin(player),
+      position = common.player_position(player),
       health = player.character.health,
       inventory = entities.inventory_contents(player.get_main_inventory()),
       crafting_queue_size = player.crafting_queue_size,
@@ -168,7 +168,7 @@ function handlers.find(params)
     if entity.valid and (status == "" or entities.status(entity) == status) then
       local match = {
         entity = entity,
-        distance = common.distance_squared(origin, entity.position),
+        distance = common.distance_squared(player.position, entity.position),
         amount = sort == "amount" and entities.amount(entity) or nil,
       }
       table.insert(matches, match)
@@ -215,7 +215,12 @@ function handlers.find(params)
   }
 end
 
--- The camera centres on the player's exact position, off the origin tile's centre.
+function handlers.set_origin(params)
+  local player = common.get_player(params)
+  return {world_position = common.set_origin(player)}
+end
+
+-- The camera centres on the player's exact position, off its tile's centre.
 function handlers.camera(params)
   local player = common.get_player(params)
   return {

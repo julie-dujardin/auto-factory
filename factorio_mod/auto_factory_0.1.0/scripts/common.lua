@@ -52,12 +52,26 @@ function common.get_player(params)
   return player
 end
 
--- Every position crossing the API is an offset from the centre of the tile the player
--- stands on, so results can be passed straight back as arguments and 1x1 or odd-sized
--- entities sit at whole offsets.
-function common.origin(player)
-  local position = player.position
+local function tile_centre(position)
   return {x = math.floor(position.x) + 0.5, y = math.floor(position.y) + 0.5}
+end
+
+-- Every position crossing the API is an offset from the centre of the tile the player
+-- stood on when the harness last set the origin, once per run, so positions stay valid
+-- as the player moves and 1x1 or odd-sized entities sit at whole offsets.
+function common.set_origin(player)
+  storage.origins = storage.origins or {}
+  storage.origins[player.index] = tile_centre(player.position)
+  return storage.origins[player.index]
+end
+
+function common.origin(player)
+  return storage.origins and storage.origins[player.index] or common.set_origin(player)
+end
+
+-- The tile the player stands on.
+function common.player_position(player)
+  return common.offset_from(common.origin(player), tile_centre(player.position))
 end
 
 function common.position_from(player, params)
