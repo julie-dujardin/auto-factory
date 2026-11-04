@@ -103,20 +103,6 @@ local function port_tile(anchor, at)
   return {x = first.x - step.x, y = first.y - step.y}
 end
 
--- The centre of a footprint flush against side of area, along tiles from its north or
--- west end.
-local function beside(area, side, along, width, height)
-  local left_top, right_bottom = area.left_top, area.right_bottom
-  if side == "east" then
-    return {x = right_bottom.x + width / 2, y = left_top.y + along + height / 2}
-  elseif side == "west" then
-    return {x = left_top.x - width / 2, y = left_top.y + along + height / 2}
-  elseif side == "south" then
-    return {x = left_top.x + along + width / 2, y = right_bottom.y + height / 2}
-  end
-  return {x = left_top.x + along + width / 2, y = left_top.y - height / 2}
-end
-
 local function clamp(value, low, high)
   return math.max(low, math.min(high, value))
 end
@@ -139,30 +125,46 @@ local function covering(area, tile, width, height)
   common.fail("that tile is inside the anchor")
 end
 
-local SIDES = {north = true, east = true, south = true, west = true}
+-- Each point of a footprint as a fraction of its width and height from its centre.
+local POINTS = {
+  northwest = {x = -0.5, y = -0.5},
+  north = {x = 0, y = -0.5},
+  northeast = {x = 0.5, y = -0.5},
+  west = {x = -0.5, y = 0},
+  centre = {x = 0, y = 0},
+  east = {x = 0.5, y = 0},
+  southwest = {x = -0.5, y = 0.5},
+  south = {x = 0, y = 0.5},
+  southeast = {x = 0.5, y = 0.5},
+}
+local PORTS = {item_out = true, pickup = true, drop = true, ahead = true, behind = true}
 
--- The first entity's centre from api_place's anchor, at, along, and dx/dy, and for an
--- offset the position asked for before snapping to the grid.
+-- The first entity's centre from api_place's anchor, anchor_point, point, and dx/dy,
+-- and for a pinned point the centre asked for before snapping to the grid.
 function layout.start(player, params, width, height)
-  local at = params.at or "offset"
   local id = math.floor(tonumber(params.anchor) or 0)
-  if at == "offset" then
-    local origin = id == 0 and common.origin(player) or entities.by_id(id).position
-    local requested = {
-      x = origin.x + common.required_number(params, "dx"),
-      y = origin.y + common.required_number(params, "dy"),
-    }
-    return {x = layout.snap(requested.x, width), y = layout.snap(requested.y, height)}, requested
+  local anchor_point = params.anchor_point or "centre"
+  if PORTS[anchor_point] then
+    if id == 0 then
+      common.fail("anchor_point " .. anchor_point .. " needs an anchor")
+    end
+    local anchor = entities.by_id(id)
+    return covering(entity_area(anchor), port_tile(anchor, anchor_point), width, height)
   end
-  if id == 0 then
-    common.fail("at " .. at .. " needs an anchor")
+  local from, own = POINTS[anchor_point], POINTS[params.point or "centre"]
+  if not from or not own then
+    common.fail("anchor_point and point must be a compass point or centre")
   end
-  local anchor = entities.by_id(id)
-  if SIDES[at] then
-    local along = math.floor(tonumber(params.along) or 0)
-    return beside(entity_area(anchor), at, along, width, height)
+  local base, base_width, base_height = common.origin(player), 1, 1
+  if id ~= 0 then
+    local anchor = entities.by_id(id)
+    base, base_width, base_height = anchor.position, anchor.tile_width, anchor.tile_height
   end
-  return covering(entity_area(anchor), port_tile(anchor, at), width, height)
+  local requested = {
+    x = base.x + from.x * base_width + common.required_number(params, "dx") - own.x * width,
+    y = base.y + from.y * base_height + common.required_number(params, "dy") - own.y * height,
+  }
+  return {x = layout.snap(requested.x, width), y = layout.snap(requested.y, height)}, requested
 end
 
 -- Areas an inserter can reach into: a transport belt's whole straight run, else the

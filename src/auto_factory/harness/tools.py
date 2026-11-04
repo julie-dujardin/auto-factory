@@ -38,6 +38,17 @@ OFFSET = {
     "on; positive dx is east, positive dy is south.",
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
+COMPASS_POINTS = [
+    "northwest",
+    "north",
+    "northeast",
+    "west",
+    "centre",
+    "east",
+    "southwest",
+    "south",
+    "southeast",
+]
 FACING = {
     "type": "string",
     "enum": ["north", "east", "south", "west", "any"],
@@ -330,7 +341,7 @@ API_TOOLS = [
         "api_entity_info",
         "Look up an entity type in general, by entity or item name: its size in "
         "tiles, power use or output, speeds, and where items and fluids go in and out. "
-        "Offsets are tiles from the entity's centre, the point api_place puts at dx/dy. "
+        "Offsets are tiles from the entity's centre, api_place's point centre. "
         "items says how inserters reach its inventory: any_side, fuel_any_side, or "
         "none. When facing matters, by_direction lists per facing: inserter pickup "
         "and drop tiles, a drill's item_out tile, which way a belt's items_move, fluid "
@@ -453,12 +464,14 @@ API_TOOLS = [
         "api_place",
         "Place count items from inventory in a straight row, each facing direction, "
         "stepping by the entity's size plus gap toward line_direction; a belt line "
-        "uses the same value for both. at says where the first goes relative to the anchor: "
-        "offset centres it dx/dy from the anchor's centre, snapped to the grid; a "
-        "side puts it flush against that side of the anchor, along tiles from the "
-        "side's north or west end; item_out covers a mining drill's output tile, "
-        "pickup and drop an inserter's, ahead the tile past the downstream end of a "
-        "transport belt's straight run, and behind the tile before its upstream end. "
+        "uses the same value for both. The first goes with its point dx/dy from the "
+        "anchor's anchor_point, both a corner, edge middle, or centre of a footprint, "
+        "snapped to the grid: point northwest at anchor_point northeast with dx 1 "
+        "dy 0 leaves one free tile east of the anchor, north edges in line. "
+        "anchor_point item_out instead covers a mining drill's output tile, pickup and "
+        "drop an inserter's, ahead the tile past the downstream end of a transport "
+        "belt's straight run, and behind the tile before its upstream end, ignoring "
+        "point and dx/dy. "
         "When the player stands in the way they step aside, and stepped_aside gives "
         "the tile they moved to. Stops at the first tile that "
         "is blocked, out of build reach, or out of items. Returns how many were "
@@ -475,35 +488,29 @@ API_TOOLS = [
                 "anchor": ENTITY_ID
                 | {
                     "description": "Id of the entity to place relative to; 0 is the "
-                    "run's start tile, which only takes offset."
+                    "run's start tile, so point and anchor_point northwest put the "
+                    "first's north-west tile at tile dx/dy."
                 },
-                "at": {
+                "anchor_point": {
                     "type": "string",
                     "enum": [
-                        "offset",
-                        "north",
-                        "east",
-                        "south",
-                        "west",
+                        *COMPASS_POINTS,
                         "item_out",
                         "pickup",
                         "drop",
                         "ahead",
                         "behind",
                     ],
-                    "default": "offset",
+                    "default": "centre",
                 },
-                "along": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20,
-                    "default": 0,
-                    "description": "For a side: tiles from the side's north or west "
-                    "end to the entity's north or west edge.",
+                "point": {
+                    "type": "string",
+                    "enum": COMPASS_POINTS,
+                    "default": "centre",
+                    "description": "Of the first entity, as built facing direction.",
                 },
-                "dx": OFFSET | {"description": "For offset: tiles east of the anchor."},
-                "dy": OFFSET
-                | {"description": "For offset: tiles south of the anchor."},
+                "dx": OFFSET | {"description": "Tiles east of anchor_point."},
+                "dy": OFFSET | {"description": "Tiles south of anchor_point."},
                 "direction": FACING,
                 "count": LINE_COUNT,
                 "line_direction": DIRECTION,
@@ -518,8 +525,8 @@ API_TOOLS = [
             [
                 "item",
                 "anchor",
-                "at",
-                "along",
+                "anchor_point",
+                "point",
                 "dx",
                 "dy",
                 "direction",

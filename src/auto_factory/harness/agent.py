@@ -31,7 +31,7 @@ inclusive dx and dy ranges. A 3x3 machine at dx=1 dy=1 has area dx [0, 2] and
 dy [0, 2], a 2x2 one at dx=0.5 dy=0.5 has dx [0, 1] and dy [0, 1]; messages write
 these dx=0..2 dy=0..2. Supply, mining, and patch areas come as the same ranges.
 Entity ids from api_scan, api_find, api_place, and api_connect never change, so prefer
-them for entities you act on or build next to.
+them for entities you act on, and give one as api_place's anchor to build next to it.
 Use game_action for known controls instead of reasoning about keyboard letters.
 Use click with the right button and a hold duration to mine resources or entities.
 API actions enforce normal reach, inventory, collision, mining, and crafting constraints.
