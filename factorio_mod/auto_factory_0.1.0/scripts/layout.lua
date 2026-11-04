@@ -31,15 +31,8 @@ function layout.snap(value, size)
   return math.floor(value + 0.5)
 end
 
-function layout.area(position, width, height)
-  return {
-    left_top = {x = position.x - width / 2, y = position.y - height / 2},
-    right_bottom = {x = position.x + width / 2, y = position.y + height / 2},
-  }
-end
-
 local function entity_area(entity)
-  return layout.area(entity.position, entity.tile_width, entity.tile_height)
+  return common.area(entity.position, entity.tile_width, entity.tile_height)
 end
 
 function layout.overlaps(a, b)

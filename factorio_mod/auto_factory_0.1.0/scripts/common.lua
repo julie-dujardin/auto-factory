@@ -124,6 +124,32 @@ function common.offset_text(origin, position)
   return "dx=" .. offset.dx .. " dy=" .. offset.dy
 end
 
+function common.area(position, width, height)
+  return {
+    left_top = {x = position.x - width / 2, y = position.y - height / 2},
+    right_bottom = {x = position.x + width / 2, y = position.y + height / 2},
+  }
+end
+
+-- The tiles whose centres lie inside area, as inclusive dx and dy ranges.
+function common.tile_range(origin, area)
+  local left_top = common.offset_from(origin, area.left_top)
+  local right_bottom = common.offset_from(origin, area.right_bottom)
+  return {
+    dx = {math.floor(left_top.dx) + 1, math.ceil(right_bottom.dx) - 1},
+    dy = {math.floor(left_top.dy) + 1, math.ceil(right_bottom.dy) - 1},
+  }
+end
+
+-- A footprint as messages give it: its tile, or the ranges of tiles it covers.
+function common.footprint_text(origin, position, width, height)
+  if width == 1 and height == 1 then
+    return common.offset_text(origin, position)
+  end
+  local range = common.tile_range(origin, common.area(position, width, height))
+  return "dx=" .. range.dx[1] .. ".." .. range.dx[2] .. " dy=" .. range.dy[1] .. ".." .. range.dy[2]
+end
+
 function common.nearest_first(list, position)
   table.sort(list, function(a, b)
     return common.distance_squared(position, a.position) < common.distance_squared(position, b.position)

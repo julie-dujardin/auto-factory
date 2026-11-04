@@ -25,8 +25,11 @@ top-left. Game positions in API arguments and results are dx/dy offsets in tiles
 the centre of the tile the player stood on when the run started (positive dx is east,
 positive dy is south). They stay fixed as the player moves, so a position from any
 earlier result or note can be passed straight back; player.position in api_scan is
-where the player stands now. A 1x1 entity and the centre of an odd-sized one sit at
-whole offsets: a 3x3 machine at dx=1 dy=1 covers dx 0 to 2 and dy 0 to 2.
+where the player stands now. An entity's position is its centre, a half offset along
+an even side. Entities larger than one tile also give area: the tiles they cover, as
+inclusive dx and dy ranges. A 3x3 machine at dx=1 dy=1 has area dx [0, 2] and
+dy [0, 2], a 2x2 one at dx=0.5 dy=0.5 has dx [0, 1] and dy [0, 1]; messages write
+these dx=0..2 dy=0..2. Supply, mining, and patch areas come as the same ranges.
 Entity ids from api_scan, api_find, api_place, and api_connect never change, so prefer
 them for entities you act on or build next to.
 Use game_action for known controls instead of reasoning about keyboard letters.

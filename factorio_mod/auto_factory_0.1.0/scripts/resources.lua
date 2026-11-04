@@ -182,10 +182,10 @@ local function summary(search, patch, here, origin)
   else
     entry.amount = amount
   end
-  entry.area = {
-    left_top = common.offset_from(origin, {x = left, y = top}),
-    right_bottom = common.offset_from(origin, {x = right, y = bottom}),
-  }
+  entry.area = common.tile_range(origin, {
+    left_top = {x = left, y = top},
+    right_bottom = {x = right, y = bottom},
+  })
   return entry, nearest_distance
 end
 

@@ -173,7 +173,10 @@ function entities.target(player, params)
   end
   local offsets = {}
   for index = 1, math.min(NEARBY_LISTED, #nearby) do
-    table.insert(offsets, common.offset_text(common.origin(player), nearby[index].position))
+    local other = nearby[index]
+    table.insert(offsets, common.footprint_text(
+      common.origin(player), other.position, other.tile_width, other.tile_height
+    ))
   end
   common.fail("no " .. name .. " at " .. requested .. "; nearest: " .. table.concat(offsets, ", "))
 end
@@ -216,20 +219,17 @@ local function network_id(pole, networks)
   return id
 end
 
-local function area_from(origin, area)
-  return {
-    left_top = common.offset_from(origin, area.left_top),
-    right_bottom = common.offset_from(origin, area.right_bottom),
-  }
+-- The tiles entity covers when it takes more than one, else nil.
+function entities.area(entity, origin)
+  if entity.tile_width == 1 and entity.tile_height == 1 then
+    return nil
+  end
+  return common.tile_range(origin, common.area(entity.position, entity.tile_width, entity.tile_height))
 end
 
 local function supply_area(pole, origin)
   local reach = pole.prototype.get_supply_area_distance(pole.quality)
-  local position = pole.position
-  return area_from(origin, {
-    left_top = {x = position.x - reach, y = position.y - reach},
-    right_bottom = {x = position.x + reach, y = position.y + reach},
-  })
+  return common.tile_range(origin, common.area(pole.position, 2 * reach, 2 * reach))
 end
 
 -- Amount left per resource the drill can mine in its area; infinite resources such as
@@ -390,6 +390,7 @@ function entities.entry(entity, origin, networks)
     name = entity.name,
     type = entity.type,
     position = common.offset_from(origin, entity.position),
+    area = entities.area(entity, origin),
   }
   if entity.supports_direction then
     entry.direction, entry.pipes_face = info.shown_facing(entity.prototype, entity.direction)
@@ -409,7 +410,7 @@ function entities.entry(entity, origin, networks)
     entry.network = network_id(entity, networks)
   end
   if entity.type == "mining-drill" then
-    entry.mining_area = area_from(origin, entity.mining_area)
+    entry.mining_area = common.tile_range(origin, entity.mining_area)
     entry.mines = mined_resources(entity)
   end
   if entity.health then
@@ -511,7 +512,11 @@ end
 
 -- What a just-built entity connects to, with warnings for ends that lead nowhere.
 function entities.links(entity, origin)
-  local links = {id = entities.id(entity), position = common.offset_from(origin, entity.position)}
+  local links = {
+    id = entities.id(entity),
+    position = common.offset_from(origin, entity.position),
+    area = entities.area(entity, origin),
+  }
   local warnings = {}
   if entity.type == "inserter" or entity.type == "mining-drill" then
     if entity.type == "inserter" then

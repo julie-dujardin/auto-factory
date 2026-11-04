@@ -85,7 +85,9 @@ local function obstruction(player, entity, position, direction)
     if other == player.character then
       character_there = true
     elseif #blockers < OBSTRUCTIONS_LISTED then
-      table.insert(blockers, other.name .. " at " .. common.offset_text(common.origin(player), other.position))
+      table.insert(blockers, other.name .. " at " .. common.footprint_text(
+        common.origin(player), other.position, other.tile_width, other.tile_height
+      ))
     end
   end
   if #blockers > 0 then
@@ -143,7 +145,7 @@ local function step_aside(player, area)
   }, here)
   for _, step in pairs(steps) do
     local spot = player.surface.find_non_colliding_position(character.name, step.position, 1, 0.1)
-    if spot and not layout.overlaps(layout.area(spot, 2 * half_width, 2 * half_height), area) then
+    if spot and not layout.overlaps(common.area(spot, 2 * half_width, 2 * half_height), area) then
       character.teleport(spot)
       return
     end
@@ -163,9 +165,9 @@ local function place_one(player, cursor, item, entity, position, direction)
   if not source then
     return "the player has no " .. item
   end
+  local width, height = layout.footprint(entity, direction)
   if entity then
-    local width, height = layout.footprint(entity, direction)
-    step_aside(player, layout.area(position, width, height))
+    step_aside(player, common.area(position, width, height))
   end
   if not cursor.transfer_stack(source, 1) then
     return "could not move " .. item .. " into the cursor"
@@ -173,7 +175,8 @@ local function place_one(player, cursor, item, entity, position, direction)
   if not player.can_build_from_cursor {position = position, direction = direction} then
     restore_cursor(player)
     local reason = obstruction(player, entity, position, direction)
-    return "the item cannot be built at " .. common.offset_text(common.origin(player), position)
+    return "the item cannot be built at "
+      .. common.footprint_text(common.origin(player), position, width, height)
       .. (reason and ": " .. reason or "")
   end
   local before = held_count(player, cursor, item)
@@ -446,9 +449,11 @@ function handlers.rotate(params)
     common.fail("Factorio did not rotate the " .. name .. "; it may not be rotatable")
   end
   local direction, pipes_face = info.shown_facing(entity.prototype, entity.direction)
+  local origin = common.origin(player)
   return {
     entity = name,
-    position = common.offset_from(common.origin(player), entity.position),
+    position = common.offset_from(origin, entity.position),
+    area = entities.area(entity, origin),
     direction = direction,
     pipes_face = pipes_face,
   }
@@ -484,9 +489,11 @@ function handlers.set_recipe(params)
     end
     returned[stack.name] = (returned[stack.name] or 0) + stack.count
   end
+  local origin = common.origin(player)
   return {
     entity = name,
-    position = common.offset_from(common.origin(player), entity.position),
+    position = common.offset_from(origin, entity.position),
+    area = entities.area(entity, origin),
     recipe = recipe,
     returned = returned,
   }

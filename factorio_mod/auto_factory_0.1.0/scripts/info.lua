@@ -202,7 +202,7 @@ function handlers.entity_info(params)
   end
   if prototype.mining_drill_radius then
     info.mining_speed = rounded(prototype.mining_speed)
-    info.mining_area = {
+    info.mining_size = {
       w = tiles_within(prototype.mining_drill_radius, prototype.tile_width),
       h = tiles_within(prototype.mining_drill_radius, prototype.tile_height),
     }
@@ -222,7 +222,7 @@ function handlers.entity_info(params)
   end
   if prototype.type == "electric-pole" then
     local reach = prototype.get_supply_area_distance()
-    info.supply_area = {w = 2 * reach, h = 2 * reach}
+    info.supply_size = {w = 2 * reach, h = 2 * reach}
     info.wire_reach = rounded(prototype.get_max_wire_distance())
   end
   return info
