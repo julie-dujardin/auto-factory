@@ -236,4 +236,27 @@ function info.ports(prototype, direction)
   return facing(prototype, FACING_TURNS[common.DIRECTION_NAMES[direction]])
 end
 
+local directional_by_name = {}
+
+-- What facing changes, as api_entity_info's directional: true, "fluids_only", or false.
+function info.directional(prototype)
+  local result = directional_by_name[prototype.name]
+  if result == nil then
+    result = directional(by_direction(prototype))
+    directional_by_name[prototype.name] = result
+  end
+  return result
+end
+
+-- How results give an entity facing direction: pipes_face when facing moves only pipe
+-- connections, else direction, which is "any" when facing changes nothing.
+function info.shown_facing(prototype, direction)
+  local directional = info.directional(prototype)
+  local name = common.DIRECTION_NAMES[direction]
+  if directional == "fluids_only" then
+    return nil, name
+  end
+  return directional and name or "any", nil
+end
+
 return info

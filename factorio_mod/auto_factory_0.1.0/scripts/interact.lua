@@ -1,6 +1,7 @@
 local common = require("scripts.common")
 local entities = require("scripts.entities")
 local ids = require("scripts.ids")
+local info = require("scripts.info")
 local layout = require("scripts.layout")
 local recipes = require("scripts.recipes")
 
@@ -213,14 +214,27 @@ end
 -- Placements closer than this to the asked position are not reported as snapped.
 local SNAP_REPORTED = 0.25
 
+-- "any" builds facing north, for entities whose facing moves no items.
+local function placing_direction(entity, params)
+  if params.direction ~= "any" then
+    return common.direction_from(params, "direction")
+  end
+  if entity and info.directional(entity) == true then
+    common.fail(
+      entity.name .. " needs direction north, east, south, or west; api_entity_info says what its facing changes"
+    )
+  end
+  return defines.direction.north
+end
+
 function handlers.place(params)
   local player = common.get_player(params)
   local item = common.required_string(params, "item")
-  local direction = common.direction_from(params, "direction")
+  local entity = placed_entity(item)
+  local direction = placing_direction(entity, params)
   local line = common.direction_from(params, "line_direction")
   local count = line_count(params)
   local cursor = empty_cursor(player)
-  local entity = placed_entity(item)
   local width, height = layout.footprint(entity, direction)
   local start, requested = layout.start(player, params, width, height)
   local stood = common.player_position(player)
@@ -250,11 +264,14 @@ function handlers.place(params)
     count = placed,
     position = common.offset_from(origin, start),
     last = common.offset_from(origin, line_position(start, line, spacing, placed - 1)),
-    direction = params.direction,
+    direction = "any",
     stopped = stopped,
     built = built_links(player, built),
     stepped_aside = stepped_to(player, stood),
   }
+  if entity then
+    result.direction, result.pipes_face = info.shown_facing(entity, direction)
+  end
   if requested and common.distance_squared(requested, start) >= SNAP_REPORTED ^ 2 then
     result.snapped_from = common.offset_from(origin, requested)
   end
@@ -417,12 +434,21 @@ function handlers.rotate(params)
   local player = common.get_player(params)
   local name, entity = reachable_entity(player, params)
   if not entity.rotate {reverse = params.reverse == true, by_player = player} then
+    local directional = info.directional(entity.prototype)
+    if not directional then
+      common.fail(name .. " has no facing: turning it changes nothing")
+    end
+    if directional == "fluids_only" and entity.type == "assembling-machine" then
+      common.fail(name .. " turns only while its recipe uses fluids: its facing moves only its pipe connections")
+    end
     common.fail("Factorio did not rotate the " .. name .. "; it may not be rotatable")
   end
+  local direction, pipes_face = info.shown_facing(entity.prototype, entity.direction)
   return {
     entity = name,
     position = common.offset_from(common.origin(player), entity.position),
-    direction = common.DIRECTION_NAMES[entity.direction],
+    direction = direction,
+    pipes_face = pipes_face,
   }
 end
 

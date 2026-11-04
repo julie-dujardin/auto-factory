@@ -38,6 +38,12 @@ OFFSET = {
     "on; positive dx is east, positive dy is south.",
 }
 DIRECTION = {"type": "string", "enum": ["north", "east", "south", "west"]}
+FACING = {
+    "type": "string",
+    "enum": ["north", "east", "south", "west", "any"],
+    "description": "any for an entity whose facing moves no items: api_entity_info "
+    "directional false or fluids_only. It then faces north.",
+}
 LINE_COUNT = {"type": "integer", "minimum": 1, "maximum": 50}
 ENTITY_ID = {
     "type": "integer",
@@ -164,10 +170,14 @@ API_TOOLS = [
         "built; reach_distance: how far an entity can be to insert into, take from, "
         "rotate, set the recipe of, or mine it; and resource_reach_distance: how far "
         "a resource tile can be to mine it. "
-        "Machines split their items into input, output, fuel, burnt_result, modules, "
-        "and trash; other inventories, such as chests and the stack of an "
-        "item-on-ground, are items. Their fluids are input_fluids and "
-        "output_fluids; pipes and tanks hold fluids. Inserters give held: the stack in "
+        "Machines split their items into input_slots, output_slots, fuel, "
+        "burnt_result, modules, and trash; other inventories, such as chests and the "
+        "stack of an item-on-ground, are items. Their fluids are input_fluids and "
+        "output_fluids; pipes and tanks hold fluids. Crafting machines give fed_by "
+        "and emptied_by: the inserters and drills dropping into them and the "
+        "inserters taking from them, with a warning when nothing takes their "
+        "products out. Entities whose facing moves only pipe connections give "
+        "pipes_face instead of direction. Inserters give held: the stack in "
         "their hand, and takes_from: what they pick up from, or nothing; inserters "
         "and mining drills give gives_to: what they drop into, or ground. Both give "
         "that entity's id and name, plus for a belt the lanes of that one tile under "
@@ -401,7 +411,9 @@ API_TOOLS = [
         "the tile they moved to. Stops at the first tile that "
         "is blocked, out of build reach, or out of items. Returns how many were "
         "placed, the positions of the first and last, snapped_from when snapping moved "
-        "the first, and built: each entity's id, takes_from and gives_to as in "
+        "the first, direction: any when facing changes nothing, or pipes_face "
+        "instead when it moves only pipe connections, and built: each entity's id, "
+        "takes_from and gives_to as in "
         "api_scan, and what it is fed or emptied by, powers, or joins by pipe "
         "(fluid_to), with warnings for "
         "ends that lead nowhere; a belt or pipe line lists only its two ends.",
@@ -440,7 +452,7 @@ API_TOOLS = [
                 "dx": OFFSET | {"description": "For offset: tiles east of the anchor."},
                 "dy": OFFSET
                 | {"description": "For offset: tiles south of the anchor."},
-                "direction": DIRECTION,
+                "direction": FACING,
                 "count": LINE_COUNT,
                 "line_direction": DIRECTION,
             },
@@ -533,7 +545,9 @@ API_TOOLS = [
     ),
     _tool(
         "api_rotate",
-        "Rotate a reachable placed entity clockwise, or counterclockwise when reverse.",
+        "Rotate a reachable placed entity clockwise, or counterclockwise when reverse. "
+        "Returns its new direction, or pipes_face when facing moves only pipe "
+        "connections.",
         _object_schema(
             {
                 "id": TARGET_ID,

@@ -1,6 +1,7 @@
 local belts = require("scripts.belts")
 local common = require("scripts.common")
 local ids = require("scripts.ids")
+local info = require("scripts.info")
 
 local entities = {}
 
@@ -22,18 +23,18 @@ end
 
 -- Entry field per inventory name; chests, trunks, ammo and the rest go to items.
 local INVENTORY_FIELDS = {
-  agricultural_tower_input = "input",
+  agricultural_tower_input = "input_slots",
   agricultural_tower_modules = "modules",
-  agricultural_tower_output = "output",
+  agricultural_tower_output = "output_slots",
   assembling_machine_dump = "trash",
   beacon_modules = "modules",
   burnt_result = "burnt_result",
-  crafter_input = "input",
+  crafter_input = "input_slots",
   crafter_modules = "modules",
-  crafter_output = "output",
+  crafter_output = "output_slots",
   crafter_trash = "trash",
   fuel = "fuel",
-  lab_input = "input",
+  lab_input = "input_slots",
   lab_modules = "modules",
   lab_trash = "trash",
   mining_drill_modules = "modules",
@@ -314,6 +315,70 @@ local function inserter_filters(inserter)
   return items
 end
 
+function entities.label(entity)
+  local id = entities.id(entity)
+  return id and entity.name .. " #" .. id or entity.name
+end
+
+local function labels(list)
+  local result = {}
+  for _, entity in pairs(list) do
+    table.insert(result, entities.label(entity))
+  end
+  return #result > 0 and result or nil
+end
+
+-- Long-handed inserters reach 2 tiles past the tile next to them.
+local FEEDER_REACH = 3
+
+-- Inserters and drills around entity that drop into it, and inserters that take from it.
+local function feeders(entity)
+  local position = entity.position
+  local reach_x = entity.tile_width / 2 + FEEDER_REACH
+  local reach_y = entity.tile_height / 2 + FEEDER_REACH
+  local fed_by, emptied_by = {}, {}
+  for _, other in pairs(entity.surface.find_entities_filtered {
+    area = {
+      left_top = {x = position.x - reach_x, y = position.y - reach_y},
+      right_bottom = {x = position.x + reach_x, y = position.y + reach_y},
+    },
+    type = {"inserter", "mining-drill"},
+  }) do
+    if holder_at(other, "drop") == entity then
+      table.insert(fed_by, other)
+    end
+    if other.type == "inserter" and holder_at(other, "pickup") == entity then
+      table.insert(emptied_by, other)
+    end
+  end
+  return fed_by, emptied_by
+end
+
+local CRAFTER_TYPES = {["assembling-machine"] = true, furnace = true, ["rocket-silo"] = true}
+
+-- True without a recipe too, as one with item products may come.
+local function makes_items(crafter)
+  local recipe = crafter.get_recipe()
+  if not recipe then
+    return true
+  end
+  for _, product in pairs(recipe.products) do
+    if product.type == "item" then
+      return true
+    end
+  end
+  return false
+end
+
+local function feeder_links(entity, links, warnings)
+  local fed_by, emptied_by = feeders(entity)
+  links.fed_by = labels(fed_by)
+  links.emptied_by = labels(emptied_by)
+  if CRAFTER_TYPES[entity.type] and #emptied_by == 0 and makes_items(entity) then
+    table.insert(warnings, "products stay in output_slots until an inserter takes them")
+  end
+end
+
 -- Collects the electric networks of listed poles into networks.
 function entities.entry(entity, origin, networks)
   local entry = {
@@ -323,7 +388,7 @@ function entities.entry(entity, origin, networks)
     position = common.offset_from(origin, entity.position),
   }
   if entity.supports_direction then
-    entry.direction = common.DIRECTION_NAMES[entity.direction]
+    entry.direction, entry.pipes_face = info.shown_facing(entity.prototype, entity.direction)
   end
   if entity.type == "resource" then
     entry.amount = entity.amount
@@ -369,6 +434,11 @@ function entities.entry(entity, origin, networks)
     entry.output_priority = entity.splitter_output_priority
     entry.filter = entity.splitter_filter and entity.splitter_filter.name
   end
+  if CRAFTER_TYPES[entity.type] then
+    local warnings = {}
+    feeder_links(entity, entry, warnings)
+    entry.warnings = #warnings > 0 and warnings or nil
+  end
   local fluids_ok, fluid_fields = pcall(fluids_by_field, entity)
   if fluids_ok then
     for field, amounts in pairs(fluid_fields) do
@@ -382,45 +452,6 @@ function entities.entry(entity, origin, networks)
   end
   entry.status = entities.status(entity)
   return entry
-end
-
-function entities.label(entity)
-  local id = entities.id(entity)
-  return id and entity.name .. " #" .. id or entity.name
-end
-
-local function labels(list)
-  local result = {}
-  for _, entity in pairs(list) do
-    table.insert(result, entities.label(entity))
-  end
-  return #result > 0 and result or nil
-end
-
--- Long-handed inserters reach 2 tiles past the tile next to them.
-local FEEDER_REACH = 3
-
--- Inserters and drills around entity that drop into it, and inserters that take from it.
-local function feeders(entity)
-  local position = entity.position
-  local reach_x = entity.tile_width / 2 + FEEDER_REACH
-  local reach_y = entity.tile_height / 2 + FEEDER_REACH
-  local fed_by, emptied_by = {}, {}
-  for _, other in pairs(entity.surface.find_entities_filtered {
-    area = {
-      left_top = {x = position.x - reach_x, y = position.y - reach_y},
-      right_bottom = {x = position.x + reach_x, y = position.y + reach_y},
-    },
-    type = {"inserter", "mining-drill"},
-  }) do
-    if holder_at(other, "drop") == entity then
-      table.insert(fed_by, other)
-    end
-    if other.type == "inserter" and holder_at(other, "pickup") == entity then
-      table.insert(emptied_by, other)
-    end
-  end
-  return fed_by, emptied_by
 end
 
 local function uses_electricity(entity)
@@ -492,9 +523,7 @@ function entities.links(entity, origin)
   elseif entity.type == "electric-pole" then
     pole_links(entity, links, warnings)
   else
-    local fed_by, emptied_by = feeders(entity)
-    links.fed_by = labels(fed_by)
-    links.emptied_by = labels(emptied_by)
+    feeder_links(entity, links, warnings)
   end
   if entity.prototype.belt_speed then
     local neighbours = entity.belt_neighbours
