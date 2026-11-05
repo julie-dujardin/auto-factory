@@ -13,7 +13,9 @@ dependencies = [
     "mss>=10.1.0",
     "openai>=3.42.0",
     "pynput>=1.8.1",
+    "pyobjc-framework-avfoundation>=13.0 ; sys_platform == 'darwin'",
     "pyobjc-framework-quartz>=13.0 ; sys_platform == 'darwin'",
+    "pyobjc-framework-screencapturekit>=13.0 ; sys_platform == 'darwin'",
 ]
 
 [dependency-groups]

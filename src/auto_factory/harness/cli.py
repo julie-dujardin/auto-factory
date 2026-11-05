@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import sys
+import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +14,12 @@ from openai import OpenAI
 
 from ..control.computer import Computer, DesktopComputer, Screen, WindowScreen
 from ..control.factorio import FactorioAPI, RconFactorioAPI, rcon_environment
+from ..control.recording import record
 from .agent import REASONING_EFFORTS, FactorioAgent
 from .tools import ControlMode
 
 SCENARIOS = Path(__file__).resolve().parents[3] / "scenarios"
+RECORDINGS = Path(__file__).resolve().parents[3] / "recordings"
 
 
 def parser() -> argparse.ArgumentParser:
@@ -45,6 +49,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--scenario",
         help=f"Name of the save's description in {SCENARIOS}, without .md",
+    )
+    result.add_argument(
+        "--record",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=f"Record the game to {RECORDINGS}, and stamp the trace with video times",
     )
     result.add_argument(
         "--check-api",
@@ -132,42 +142,62 @@ def main() -> None:
             raise SystemExit(2)
 
     client = OpenAI()
-    agent = FactorioAgent(
-        create_completion=client.chat.completions.create,
-        computer=computer,
-        model=model,
-        factorio=factorio,
-        control=control,
-        observation_radius=args.observation_radius,
-        max_steps=args.max_steps,
-        reasoning_effort=args.reasoning_effort,
-        screen=screen,
-    )
-
-    print(f"Starting {control} control. Press Ctrl-C to stop.", flush=True)
     langfuse = get_client()
-    with (
-        langfuse.start_as_current_observation(
-            as_type="agent", name="episode", input=args.task
-        ) as episode,
-        propagate_attributes(
-            trace_name="episode",
-            tags=[control, model]
-            + ([f"scenario:{args.scenario}"] if args.scenario else []),
-            metadata={"scenario": args.scenario} if args.scenario else None,
-        ),
-    ):
-        if url := langfuse.get_trace_url():
-            print(f"Trace: {url}", flush=True)
-        research_start = researched_count(factorio) if factorio else None
-        try:
-            answer = agent.run(args.task, scenario)
-        except KeyboardInterrupt:
-            episode.update(level="WARNING", status_message="stopped by user")
-            print("\nStopped.", file=sys.stderr)
-            raise SystemExit(130) from None
-        finally:
-            if factorio and research_start is not None:
-                score_research(episode, factorio, research_start)
-        episode.update(output=answer)
-        print(answer)
+    trace_id = langfuse.create_trace_id()
+    metadata = {"scenario": args.scenario} if args.scenario else {}
+    with ExitStack() as recording:
+        video_time = None
+        if args.record:
+            path = RECORDINGS / f"{time.strftime('%Y%m%d-%H%M%S')}_{trace_id}.mp4"
+            try:
+                video_time = recording.enter_context(record(path))
+            except RuntimeError as exc:
+                print(
+                    f"Could not record: {exc} Pass --no-record to run without it.",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2) from None
+            metadata["recording"] = str(path)
+            print(f"Recording: {path}", flush=True)
+        agent = FactorioAgent(
+            create_completion=client.chat.completions.create,
+            computer=computer,
+            model=model,
+            factorio=factorio,
+            control=control,
+            observation_radius=args.observation_radius,
+            max_steps=args.max_steps,
+            reasoning_effort=args.reasoning_effort,
+            screen=screen,
+            video_time=video_time,
+        )
+
+        print(f"Starting {control} control. Press Ctrl-C to stop.", flush=True)
+        with (
+            langfuse.start_as_current_observation(
+                as_type="agent",
+                name="episode",
+                input=args.task,
+                trace_context={"trace_id": trace_id},
+            ) as episode,
+            propagate_attributes(
+                trace_name="episode",
+                tags=[control, model]
+                + ([f"scenario:{args.scenario}"] if args.scenario else []),
+                metadata=metadata or None,
+            ),
+        ):
+            if url := langfuse.get_trace_url():
+                print(f"Trace: {url}", flush=True)
+            research_start = researched_count(factorio) if factorio else None
+            try:
+                answer = agent.run(args.task, scenario)
+            except KeyboardInterrupt:
+                episode.update(level="WARNING", status_message="stopped by user")
+                print("\nStopped.", file=sys.stderr)
+                raise SystemExit(130) from None
+            finally:
+                if factorio and research_start is not None:
+                    score_research(episode, factorio, research_start)
+            episode.update(output=answer)
+            print(answer)

@@ -38,6 +38,12 @@ When a run starts from one of your saves, describe that save's world in `scenari
 uv run --env-file .env auto-factory --control api --scenario belt-factory "automate transport belts"
 ```
 
+### Recording
+
+Each run records the game to `recordings/<start time>_<trace id>.mp4` (HEVC, 30 fps, 3 Mbps ≈ 1.3 GB per hour), which stays on this machine; pass `--no-record` to skip it. On macOS it captures the Factorio window, even when covered, so every control mode needs Screen Recording; on Linux ffmpeg (with libx265) records the isolated display.
+
+The trace's metadata gives the recording's path. Each step and tool call carries `video_time`, its offset into the video, and each step the game `tick` it observed.
+
 ## Call tools by hand
 
 `auto-factory-tool` sends one API tool call over RCON, exactly as the agent would, and prints the result:

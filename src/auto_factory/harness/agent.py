@@ -296,7 +296,9 @@ class FactorioAgent:
         reasoning_effort: ReasoningEffort = "medium",
         report: Callable[[str], None] = print,
         screen: Screen | None = None,
+        video_time: Callable[[], str] | None = None,
     ) -> None:
+        """video_time reads the run's recording, to stamp traced turns and tools."""
         if control == "computer" and computer is None:
             raise ValueError("computer mode requires computer control")
         if control in {"api", "mixed"} and factorio is None:
@@ -317,6 +319,7 @@ class FactorioAgent:
         self._max_steps = max_steps
         self._reasoning_effort = reasoning_effort
         self._report = report
+        self._video_time = video_time
         self._tools = tools_for(desktop=computer is not None, api=factorio is not None)
 
     def run(self, task: str, scenario: str | None = None) -> str:
@@ -360,15 +363,17 @@ class FactorioAgent:
                     else self._factorio.call("camera", {})
                 )
                 messages.append(observation(self._screen.screenshot(), camera))
+            metadata = None
             if self._factorio is not None:
                 state = self._factorio.observe(self._observation_radius)
                 messages.append(game_state_observation(state))
+                metadata = {"tick": state["tick"]}
             messages.append(tasks_observation(tasks))
             trim_images(messages)
             trim_game_states(messages)
             trim_tasks(messages)
             tool_calls, cut_off, reasoning = self._complete(
-                f"step {step}", messages, self._tools, "required", effort
+                f"step {step}", messages, self._tools, "required", effort, metadata
             )
             if cut_off and not tool_calls:
                 effort = lower_effort(effort)
@@ -400,7 +405,10 @@ class FactorioAgent:
                 else:
                     self._report(f"step {step}: {name} {arguments}")
                     with get_client().start_as_current_observation(
-                        as_type="tool", name=name, input=arguments
+                        as_type="tool",
+                        name=name,
+                        input=arguments,
+                        metadata=self._stamp(),
                     ) as span:
                         acted = tasks.current
                         try:
@@ -450,6 +458,7 @@ class FactorioAgent:
         tools: list[dict[str, Any]],
         tool_choice: str,
         reasoning_effort: ReasoningEffort,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[list[Any], bool, str | None]:
         """Request one turn, append it to messages, and give its tool calls, whether
         the output limit cut it off, and its reasoning."""
@@ -464,6 +473,7 @@ class FactorioAgent:
             model=self._model,
             input=messages,
             model_parameters=dict(parameters),
+            metadata=self._stamp(metadata),
         ) as generation:
             response = self._create_completion(
                 model=self._model,
@@ -527,12 +537,21 @@ class FactorioAgent:
                 self._report(f"step {step}: notes from cut-off thinking: {exc}")
             else:
                 with get_client().start_as_current_observation(
-                    as_type="tool", name="notes", input=arguments
+                    as_type="tool",
+                    name="notes",
+                    input=arguments,
+                    metadata=self._stamp(),
                 ) as span:
                     span.update(output=result)
                 saved = True
         del messages[start:]
         messages.append(CUT_OFF_NOTED if saved else CUT_OFF_WARNING)
+
+    def _stamp(self, metadata: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        """metadata plus where the recording is now."""
+        if self._video_time is None:
+            return metadata
+        return (metadata or {}) | {"video_time": self._video_time()}
 
     def _feedback(
         self,
@@ -572,7 +591,10 @@ class FactorioAgent:
                 continue
             self._report(f"look back: {call.function.name} {arguments}")
             with get_client().start_as_current_observation(
-                as_type="tool", name="feedback", input=arguments
+                as_type="tool",
+                name="feedback",
+                input=arguments,
+                metadata=self._stamp(),
             ) as span:
                 span.update(output=self._feedback(span, reports, arguments, None))
 

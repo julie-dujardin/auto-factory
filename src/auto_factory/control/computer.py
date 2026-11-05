@@ -91,51 +91,60 @@ def normalized_to_pixel(value: int, size: int) -> int:
     return min(size - 1, int(value / NORMALIZED_SCREEN_SIZE * size))
 
 
+def screen_capture() -> Any:
+    """Quartz, once the terminal may record the screen (macOS)."""
+    try:
+        # PyObjC creates framework symbols lazily, out of type checkers' sight.
+        quartz: Any = importlib.import_module("Quartz")
+    except ImportError as exc:
+        raise RuntimeError(
+            "Window capture dependencies are unavailable; run `uv sync`."
+        ) from exc
+    # Prompts for the permission the first time.
+    if not quartz.CGRequestScreenCaptureAccess():
+        raise RuntimeError(
+            "Grant your terminal Screen Recording in System Settings > "
+            "Privacy & Security, then retry."
+        )
+    return quartz
+
+
+def factorio_window(quartz: Any) -> int:
+    """The Factorio game window's number."""
+    windows = quartz.CGWindowListCopyWindowInfo(
+        quartz.kCGWindowListOptionAll, quartz.kCGNullWindowID
+    )
+    # Factorio also owns thin menu-bar windows on every display.
+    game = max(
+        (
+            window
+            for window in windows
+            if str(window.get("kCGWindowOwnerName", "")).startswith("Factorio")
+            and window.get("kCGWindowLayer") == 0
+        ),
+        key=lambda window: (
+            window["kCGWindowBounds"]["Width"] * window["kCGWindowBounds"]["Height"]
+        ),
+        default=None,
+    )
+    if game is None:
+        raise RuntimeError("Factorio is not running; run `auto-factory-game`.")
+    return int(game["kCGWindowNumber"])
+
+
 class WindowScreen:
     """Captures the Factorio window on macOS, even when other windows cover it."""
 
     def __init__(self) -> None:
-        try:
-            # PyObjC creates framework symbols lazily, out of type checkers' sight.
-            quartz: Any = importlib.import_module("Quartz")
-        except ImportError as exc:
-            raise RuntimeError(
-                "Window capture dependencies are unavailable; run `uv sync`."
-            ) from exc
-        # Prompts for the permission the first time.
-        if not quartz.CGRequestScreenCaptureAccess():
-            raise RuntimeError(
-                "Grant your terminal Screen Recording in System Settings > "
-                "Privacy & Security, then retry."
-            )
-        self._quartz = quartz
+        self._quartz = screen_capture()
 
     def screenshot(self) -> Screenshot:
         quartz = self._quartz
-        windows = quartz.CGWindowListCopyWindowInfo(
-            quartz.kCGWindowListOptionAll, quartz.kCGNullWindowID
-        )
-        # Factorio also owns thin menu-bar windows on every display.
-        game = max(
-            (
-                window
-                for window in windows
-                if str(window.get("kCGWindowOwnerName", "")).startswith("Factorio")
-                and window.get("kCGWindowLayer") == 0
-            ),
-            key=lambda window: (
-                window["kCGWindowBounds"]["Width"] * window["kCGWindowBounds"]["Height"]
-            ),
-            default=None,
-        )
-        if game is None:
-            raise RuntimeError("Factorio is not running; run `auto-factory-game`.")
-
         # Nominal resolution: one pixel per point, so Retina captures stay small.
         image = quartz.CGWindowListCreateImage(
             quartz.CGRectNull,
             quartz.kCGWindowListOptionIncludingWindow,
-            game["kCGWindowNumber"],
+            factorio_window(quartz),
             quartz.kCGWindowImageBoundsIgnoreFraming
             | quartz.kCGWindowImageNominalResolution,
         )

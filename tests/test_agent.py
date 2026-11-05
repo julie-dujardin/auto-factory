@@ -1,5 +1,6 @@
 import json
 from copy import deepcopy
+from itertools import count
 from types import SimpleNamespace
 from typing import Any
 
@@ -131,7 +132,11 @@ class FakeFactorio:
         self.results = {"camera": CAMERA, "set_origin": {}} | (results or {})
 
     def observe(self, radius: float) -> dict[str, object]:
-        return {"radius": radius, "player": {"position": {"dx": 1, "dy": 2}}}
+        return {
+            "tick": 600,
+            "radius": radius,
+            "player": {"position": {"dx": 1, "dy": 2}},
+        }
 
     def execute(self, name: str, arguments: dict[str, object]) -> str:
         self.actions.append((name, arguments))
@@ -751,3 +756,35 @@ def test_trim_images_keeps_latest() -> None:
     assert messages[0]["content"] == evicted
     assert messages[1]["content"] == evicted
     assert messages[2]["content"][1]["type"] == "image_url"
+
+
+def test_traces_carry_video_time_and_tick(monkeypatch: pytest.MonkeyPatch) -> None:
+    langfuse = FakeLangfuse()
+    monkeypatch.setattr("auto_factory.harness.agent.get_client", lambda: langfuse)
+    seconds = count(1)
+    completions = FakeCompletions(
+        [
+            FakeCall("api_recipe", '{"item":"iron-gear-wheel"}'),
+            FakeCall("fail_task", '{"reason":"gave up"}'),
+        ]
+    )
+    agent = FactorioAgent(
+        completions.create,
+        None,
+        "test-model",
+        factorio=FakeFactorio(),
+        control="api",
+        report=lambda _: None,
+        video_time=lambda: f"00:00:0{next(seconds)}.0",
+    )
+
+    agent.run("craft")
+
+    assert langfuse.named("step 1")[0]["metadata"] == {
+        "tick": 600,
+        "video_time": "00:00:01.0",
+    }
+    assert langfuse.named("api_recipe")[0]["metadata"] == {"video_time": "00:00:02.0"}
+    assert langfuse.named("step 2")[0]["metadata"]["video_time"] == "00:00:03.0"
+    assert langfuse.named("fail_task")[0]["metadata"] == {"video_time": "00:00:04.0"}
+    assert langfuse.named("look back")[0]["metadata"] == {"video_time": "00:00:05.0"}
